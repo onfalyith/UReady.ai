@@ -1,5 +1,70 @@
-import { extractPdfTextInBrowser } from "@/lib/client/extract-pdf-browser"
+"use client"
+
+import type { PdfJsExtractionMeta } from "@/lib/pdf/extraction-heuristic"
 import { isPdfJsExtractionLowQuality } from "@/lib/pdf/extraction-heuristic"
+
+/** package.json의 pdfjs-dist와 맞춤 (worker/main 불일치 시 런타임 오류 방지) */
+const PDFJS_DIST_VERSION = "5.6.205"
+
+type BrowserPdfExtractOk = {
+  ok: true
+  text: string
+  meta: PdfJsExtractionMeta
+}
+
+type BrowserPdfExtractErr = {
+  ok: false
+  error: string
+}
+
+type BrowserPdfExtractResult = BrowserPdfExtractOk | BrowserPdfExtractErr
+
+async function extractPdfTextInBrowser(
+  file: File
+): Promise<BrowserPdfExtractResult> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_DIST_VERSION}/legacy/build/pdf.worker.min.mjs`
+
+    const data = new Uint8Array(await file.arrayBuffer())
+    const loadingTask = pdfjs.getDocument({
+      data,
+      useSystemFonts: true,
+    })
+
+    const pdf = await loadingTask.promise
+    const parts: string[] = []
+    const pageCharCounts: number[] = []
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const textContent = await page.getTextContent()
+      const pageText = textContent.items
+        .map((item) => {
+          if (item && typeof item === "object" && "str" in item) {
+            return (item as { str: string }).str
+          }
+          return ""
+        })
+        .filter(Boolean)
+        .join(" ")
+      const trimmed = pageText.trim()
+      parts.push(trimmed)
+      pageCharCounts.push(trimmed.replace(/\s/g, "").length)
+    }
+
+    const text = parts.filter(Boolean).join("\n\n").trim()
+
+    return {
+      ok: true,
+      text,
+      meta: { numPages: pdf.numPages, pageCharCounts },
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "pdf.js 추출 실패"
+    return { ok: false, error: msg }
+  }
+}
 
 export type ExtractPdfOk = {
   success: true

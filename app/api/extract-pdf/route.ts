@@ -10,6 +10,7 @@ import { isPdfJsExtractionLowQuality } from "@/lib/pdf/extraction-heuristic"
 
 export const runtime = "nodejs"
 
+/** 클라이언트가 4MB 초과 PDF는 보내지 않음(Vercel 요청 본문 ~4.5MB 한도). */
 const MAX_BYTES = 15 * 1024 * 1024
 
 type OkBody = { success: true; text: string; source: "pdfjs" | "unstructured" }

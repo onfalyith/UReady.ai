@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { FileText, Upload, X, Search, Sparkles, Loader2 } from "lucide-react"
-import { extractPdfViaApi } from "@/lib/api/extract-pdf-client"
+import { extractPdfForUpload } from "@/lib/api/extract-pdf-client"
 
 function readTextFileWithFileReader(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -68,10 +68,10 @@ export function MainInput({ onScan }: MainInputProps) {
 
     const previousContent = fileContent
     setIsParsingPdf(true)
-    setPdfStage("unstructured")
+    setPdfStage("text")
     setError("")
     try {
-      const res = await extractPdfViaApi(selectedFile)
+      const res = await extractPdfForUpload(selectedFile)
       if (!res.success) {
         setError(res.error)
         setFile(null)
