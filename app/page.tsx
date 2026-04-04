@@ -11,7 +11,7 @@ import {
 } from "@/lib/uready/state"
 import type { UReadyAppState } from "@/lib/uready/types"
 import { analyzePresentationText } from "@/lib/api/analysis-client"
-import { extractPdfViaApi } from "@/lib/api/extract-pdf-client"
+import { extractPdfForUpload } from "@/lib/api/extract-pdf-client"
 import { readTextFileWithFileReader } from "@/lib/client/read-text-file"
 import {
   isPdfFile,
@@ -71,7 +71,7 @@ export default function Home() {
         selectedFile: file,
         extractingDocument: true,
       }))
-      const result = await extractPdfViaApi(file)
+      const result = await extractPdfForUpload(file)
       setState((s) => ({
         ...s,
         extractingDocument: false,
