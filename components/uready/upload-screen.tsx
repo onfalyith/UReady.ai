@@ -94,7 +94,7 @@ export function UploadScreen({
           <br />
           대학생{" "}
           <strong className="font-semibold text-uready-gray-900">
-            10명 중 9명
+            10명 중 5명
           </strong>
           이 겪는 발표 불안, 내 것으로 준비하세요.
         </p>
