@@ -1,3 +1,4 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -10,8 +11,10 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.45 0.2 260);
-  --primary-foreground: oklch(0.985 0 0);
+  /* 디자인 시스템 Primary */
+  --primary: #d32d2f;
+  --primary-foreground: #fafafa;
+  --primary-hover: #b02527;
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.96 0.005 260);
@@ -22,7 +25,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.9 0.01 260);
   --input: oklch(0.92 0 0);
-  --ring: oklch(0.45 0.2 260);
+  --ring: #d32d2f;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -31,7 +34,7 @@
   --radius: 0.75rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.45 0.2 260);
+  --sidebar-primary: #d32d2f;
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
@@ -52,8 +55,9 @@
   --card-foreground: oklch(0.95 0 0);
   --popover: oklch(0.17 0.01 260);
   --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.65 0.2 260);
-  --primary-foreground: oklch(0.1 0 0);
+  --primary: #d32d2f;
+  --primary-foreground: #fafafa;
+  --primary-hover: #b02527;
   --secondary: oklch(0.22 0.01 260);
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.22 0.01 260);
@@ -64,7 +68,7 @@
   --destructive-foreground: oklch(0.95 0 0);
   --border: oklch(0.25 0.01 260);
   --input: oklch(0.22 0.01 260);
-  --ring: oklch(0.65 0.2 260);
+  --ring: #d32d2f;
   --chart-1: oklch(0.65 0.2 260);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -72,8 +76,8 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.15 0.01 260);
   --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.65 0.2 260);
-  --sidebar-primary-foreground: oklch(0.1 0 0);
+  --sidebar-primary: #d32d2f;
+  --sidebar-primary-foreground: #fafafa;
   --sidebar-accent: oklch(0.22 0.01 260);
   --sidebar-accent-foreground: oklch(0.95 0 0);
   --sidebar-border: oklch(0.25 0.01 260);
@@ -87,8 +91,32 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  /* UReady.ai design tokens + Tailwind `bg-highlight` (#E5E7EB) */
+  --color-highlight: #e5e7eb;
+  --color-primary-hover: var(--primary-hover);
+  --color-uready-red: #d32d2f;
+  --color-uready-red-dark: #b02527;
+  --color-uready-red-light: #fce8e9;
+  --color-uready-gray-50: #f9fafb;
+  --color-uready-gray-100: #f3f4f6;
+  --color-uready-gray-200: #e5e7eb;
+  --color-uready-gray-400: #9ca3af;
+  --color-uready-gray-500: #6b7280;
+  --color-uready-gray-700: #374151;
+  --color-uready-gray-900: #111827;
+  --color-uready-green: #16a34a;
+  --color-uready-amber: #d97706;
+  --color-uready-amber-light: #fef3c7;
+  --color-uready-blue: #2563eb;
+  --color-uready-blue-light: #dbeafe;
+  --color-uready-pink-light: #fee2e2;
+  --shadow-uready-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-uready-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-uready-lg: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -132,7 +160,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-sans text-foreground;
   }
 }
 

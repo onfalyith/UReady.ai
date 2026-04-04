@@ -1,6 +1,9 @@
 import { ScanResult, Flaw } from "./types"
 
-// Simulate AI analysis with mock data
+/**
+ * 데모용 모의 스캔(랜덤 문장 기반). 실제 LLM·Dify 연동 시 시스템 프롬프트는
+ * `lib/prompts/flaw-analysis.ts`의 `FLAW_ANALYSIS_SYSTEM_PROMPT`를 사용하세요.
+ */
 export async function mockScanContent(content: string): Promise<ScanResult> {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 3000))
@@ -8,10 +11,27 @@ export async function mockScanContent(content: string): Promise<ScanResult> {
   // Generate mock flaws based on content
   const flaws = generateMockFlaws(content)
 
+  const analysis = {
+    summary: "데모용 모의 분석입니다. 실제 서비스는 Gemini 검색 그라운딩 API를 사용합니다.",
+    issues: flaws,
+  }
+
   return {
     originalContent: content,
-    flaws
+    analysis,
+    flaws,
   }
+}
+
+function mockEvidence(): Flaw["evidence"] {
+  return [
+    {
+      title: "데모",
+      url: "",
+      snippet: "모의 데이터이며 실제 웹 검색 근거가 아닙니다.",
+      stance: "insufficient",
+    },
+  ]
 }
 
 function generateMockFlaws(content: string): Flaw[] {
@@ -39,12 +59,13 @@ function generateMockFlaws(content: string): Flaw[] {
 
     flaws.push({
       id: `weakness-${i}`,
-      category: "weakness",
+      tag: "논리적 취약점",
       originalText: sentence.length > 50 ? sentence.slice(0, 50) + "..." : sentence,
       reason: getWeaknessReason(i),
       improvementQuestion: getWeaknessQuestion(i),
       startIndex,
-      endIndex: startIndex + sentence.length
+      endIndex: startIndex + sentence.length,
+      evidence: mockEvidence(),
     })
   }
 
@@ -63,12 +84,13 @@ function generateMockFlaws(content: string): Flaw[] {
 
     flaws.push({
       id: `counter-${i}`,
-      category: "counter",
+      tag: "반론",
       originalText: sentence.length > 50 ? sentence.slice(0, 50) + "..." : sentence,
       reason: getCounterReason(i),
       improvementQuestion: getCounterQuestion(i),
       startIndex,
-      endIndex: startIndex + sentence.length
+      endIndex: startIndex + sentence.length,
+      evidence: mockEvidence(),
     })
   }
 

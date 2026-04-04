@@ -8,6 +8,11 @@ export type AnalyzePdfClientResult = {
   /** Dify POST /workflows/run (blocking) 응답 */
   workflow: Record<string, unknown>
 }
+export type AnalyzeTextClientResult = {
+  ok: true
+  /** Dify POST /workflows/run (blocking) 응답 */
+  workflow: Record<string, unknown>
+}
 
 export type AnalyzePdfClientError = {
   ok: false
@@ -15,6 +20,7 @@ export type AnalyzePdfClientError = {
   message: string
   detail?: string
 }
+export type AnalyzeTextClientError = AnalyzePdfClientError
 
 export async function analyzePdfViaApi(
   file: File,
@@ -59,6 +65,63 @@ export async function analyzePdfViaApi(
   }
 
   const data = json as AnalyzePdfClientResult
+  if (data && typeof data === "object" && data.ok === true) {
+    return data
+  }
+
+  return {
+    ok: false,
+    status: res.status,
+    message: "Unexpected response shape",
+    detail: text,
+  }
+}
+
+export async function analyzeTextViaApi(
+  content: string,
+  options?: {
+    /** 기본값: anonymous */
+    user?: string
+    /** Dify 워크플로 텍스트 입력 변수명 */
+    textInputKey?: string
+  }
+): Promise<AnalyzeTextClientResult | AnalyzeTextClientError> {
+  const res = await fetch("/api/dify/analyze-text", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      content,
+      user: options?.user,
+      textInputKey: options?.textInputKey,
+    }),
+  })
+
+  const text = await res.text()
+  let json: unknown
+  try {
+    json = text ? JSON.parse(text) : null
+  } catch {
+    return {
+      ok: false,
+      status: res.status,
+      message: "Invalid JSON response",
+      detail: text,
+    }
+  }
+
+  if (!res.ok) {
+    const err = json as { message?: string; detail?: string }
+    return {
+      ok: false,
+      status: res.status,
+      message: err?.message ?? `Request failed (${res.status})`,
+      detail: err?.detail,
+    }
+  }
+
+  const data = json as AnalyzeTextClientResult
   if (data && typeof data === "object" && data.ok === true) {
     return data
   }

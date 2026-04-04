@@ -1,55 +1,178 @@
 "use client"
 
-import { useState } from "react"
-import { Header } from "@/components/header"
-import { MainInput } from "@/components/main-input"
-import { ScanningLoader } from "@/components/scanning-loader"
-import { ScanResult } from "@/components/scan-result"
-import { Toaster } from "@/components/ui/sonner"
-import { AppState, ScanResult as ScanResultType } from "@/lib/types"
-import { mockScanContent } from "@/lib/mock-scan"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { UploadScreen } from "@/components/uready/upload-screen"
+import { LoadingScreen } from "@/components/uready/loading-screen"
+import { ResultScreen } from "@/components/result-screen"
+import {
+  createInitialUReadyState,
+  getDisplayFilename,
+  resolveSourceKind,
+} from "@/lib/uready/state"
+import type { UReadyAppState } from "@/lib/uready/types"
+import { analyzePresentationText } from "@/lib/api/analysis-client"
+import { extractPdfViaApi } from "@/lib/api/extract-pdf-client"
+import { readTextFileWithFileReader } from "@/lib/client/read-text-file"
+import {
+  isPdfFile,
+  isTxtFile,
+  validateUploadDocument,
+} from "@/lib/client/upload-document"
+import {
+  countSignificantChars,
+  MIN_ANALYSIS_SIGNIFICANT_CHARS,
+} from "@/lib/uready/analysis-limits"
 
 export default function Home() {
-  const [appState, setAppState] = useState<AppState>("input")
-  const [scanResult, setScanResult] = useState<ScanResultType | null>(null)
+  const [state, setState] = useState<UReadyAppState>(createInitialUReadyState)
+  const analyzeRequestId = useRef(0)
 
-  const handleScan = async (content: string) => {
-    setAppState("scanning")
-    
-    try {
-      const result = await mockScanContent(content)
-      setScanResult(result)
-      setAppState("result")
-    } catch (error) {
-      console.error("Scan failed:", error)
-      setAppState("input")
+  const resetToUpload = useCallback(() => {
+    analyzeRequestId.current += 1
+    setState(createInitialUReadyState())
+  }, [])
+
+  const dismissAnalysisError = useCallback(() => {
+    setState((s) => ({ ...s, analysisError: null }))
+  }, [])
+
+  const dropzoneLabel = state.extractingDocument
+    ? "PDF 텍스트 추출 중…"
+    : state.selectedFile
+      ? state.selectedFile.name
+      : "PDF 또는 TXT 파일 업로드"
+
+  const handleDocumentFile = useCallback(async (file: File) => {
+    const v = validateUploadDocument(file)
+    if (!v.ok) {
+      window.alert(v.message)
+      return
     }
-  }
 
-  const handleReset = () => {
-    setScanResult(null)
-    setAppState("input")
-  }
+    if (isTxtFile(file)) {
+      try {
+        const text = await readTextFileWithFileReader(file)
+        setState((s) => ({
+          ...s,
+          draftText: text,
+          selectedFile: file,
+        }))
+      } catch {
+        window.alert(
+          "텍스트 파일을 읽는 데 실패했습니다. 기존 대본 내용은 그대로입니다."
+        )
+      }
+      return
+    }
+
+    if (isPdfFile(file)) {
+      setState((s) => ({
+        ...s,
+        selectedFile: file,
+        extractingDocument: true,
+      }))
+      const result = await extractPdfViaApi(file)
+      setState((s) => ({
+        ...s,
+        extractingDocument: false,
+        ...(result.success ? { draftText: result.text } : {}),
+      }))
+      if (!result.success) {
+        window.alert(result.error)
+      }
+    }
+  }, [])
+
+  const startAnalysis = useCallback(() => {
+    const kind = resolveSourceKind(state.draftText, state.selectedFile)
+    if (kind === "none") {
+      window.alert("발표 대본을 입력하거나 PDF 파일을 업로드해주세요.")
+      return
+    }
+
+    const sig = countSignificantChars(state.draftText.trim())
+    if (sig < MIN_ANALYSIS_SIGNIFICANT_CHARS) {
+      window.alert(
+        `분석할 텍스트가 너무 짧습니다.\n공백 제외 ${MIN_ANALYSIS_SIGNIFICANT_CHARS}자 이상 입력한 뒤 다시 시도해 주세요. (현재 약 ${sig}자)`
+      )
+      return
+    }
+
+    const displayFilename = getDisplayFilename(
+      state.draftText,
+      state.selectedFile
+    )
+
+    setState((s) => ({
+      ...s,
+      screen: "loading",
+      sourceKind: kind,
+      displayFilename,
+      analysisError: null,
+      analysisResult: null,
+    }))
+  }, [state.draftText, state.selectedFile])
+
+  useEffect(() => {
+    if (state.screen !== "loading") return
+
+    const id = ++analyzeRequestId.current
+    const text = state.draftText
+
+    void (async () => {
+      const res = await analyzePresentationText(text)
+      if (analyzeRequestId.current !== id) return
+
+      if (!res.ok) {
+        setState((s) => ({
+          ...s,
+          screen: "upload",
+          analysisError: res.message,
+        }))
+        return
+      }
+
+      setState((s) => ({
+        ...s,
+        screen: "result",
+        analysisResult: res.data,
+      }))
+    })()
+  }, [state.screen, state.draftText])
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header onLogoClick={handleReset} />
-      
-      <main className="flex-1 py-8 md:py-12">
-        {appState === "input" && (
-          <MainInput onScan={handleScan} />
-        )}
-        
-        {appState === "scanning" && (
-          <ScanningLoader />
-        )}
-        
-        {appState === "result" && scanResult && (
-          <ScanResult result={scanResult} onReset={handleReset} />
-        )}
-      </main>
-      
-      <Toaster position="bottom-center" />
-    </div>
+    <>
+      {state.screen === "upload" && (
+        <UploadScreen
+          draftText={state.draftText}
+          dropzoneLabel={dropzoneLabel}
+          extractingDocument={state.extractingDocument}
+          analysisError={state.analysisError}
+          onDismissAnalysisError={dismissAnalysisError}
+          onDraftTextChange={(draftText) =>
+            setState((s) => ({ ...s, draftText }))
+          }
+          onDocumentFile={handleDocumentFile}
+          onStart={startAnalysis}
+          onLogoClick={resetToUpload}
+        />
+      )}
+
+      {state.screen === "loading" && (
+        <LoadingScreen
+          displayFilename={state.displayFilename}
+          onLogoClick={resetToUpload}
+        />
+      )}
+
+      {state.screen === "result" && state.analysisResult ? (
+        <ResultScreen
+          displayFilename={state.displayFilename}
+          analysis={state.analysisResult}
+          onReset={resetToUpload}
+          onLogoClick={resetToUpload}
+        />
+      ) : null}
+    </>
   )
 }

@@ -5,10 +5,23 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
-import { FileText, Upload, X, Search, Sparkles } from "lucide-react"
+import { FileText, Upload, X, Search, Sparkles, Loader2 } from "lucide-react"
+import { extractPdfViaApi } from "@/lib/api/extract-pdf-client"
+
+function readTextFileWithFileReader(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const r = reader.result
+      resolve(typeof r === "string" ? r : "")
+    }
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"))
+    reader.readAsText(file, "UTF-8")
+  })
+}
 
 interface MainInputProps {
-  onScan: (content: string) => void
+  onScan: (payload: { content: string }) => void
 }
 
 export function MainInput({ onScan }: MainInputProps) {
@@ -18,32 +31,73 @@ export function MainInput({ onScan }: MainInputProps) {
   const [fileContent, setFileContent] = useState("")
   const [error, setError] = useState("")
   const [isDragging, setIsDragging] = useState(false)
+  const [isParsingPdf, setIsParsingPdf] = useState(false)
+  const [pdfStage, setPdfStage] = useState<"text" | "unstructured">("text")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = async (selectedFile: File) => {
     setError("")
-    
-    const validTypes = ["text/plain", "application/pdf"]
-    if (!validTypes.includes(selectedFile.type)) {
+
+    const name = selectedFile.name.toLowerCase()
+    const isTxt =
+      selectedFile.type === "text/plain" || name.endsWith(".txt")
+    const isPdf =
+      selectedFile.type === "application/pdf" ||
+      selectedFile.type === "application/x-pdf" ||
+      name.endsWith(".pdf")
+
+    if (!isTxt && !isPdf) {
       setError("txt 또는 PDF만 업로드 가능합니다")
       return
     }
 
-    setFile(selectedFile)
-    
-    if (selectedFile.type === "text/plain") {
-      const text = await selectedFile.text()
-      setFileContent(text)
-    } else {
-      // For PDF, we'll just store a placeholder message
-      // In production, you'd use a PDF parsing library
-      setFileContent(`[PDF 파일: ${selectedFile.name}]`)
+    setFile(null)
+
+    if (isTxt) {
+      setFileContent("")
+      try {
+        setFile(selectedFile)
+        const text = await readTextFileWithFileReader(selectedFile)
+        setFileContent(text)
+      } catch {
+        setError("텍스트 파일을 읽지 못했습니다.")
+        setFile(null)
+      }
+      return
+    }
+
+    const previousContent = fileContent
+    setIsParsingPdf(true)
+    setPdfStage("unstructured")
+    setError("")
+    try {
+      const res = await extractPdfViaApi(selectedFile)
+      if (!res.success) {
+        setError(res.error)
+        setFile(null)
+        setFileContent(previousContent)
+        return
+      }
+      setFile(selectedFile)
+      setFileContent(res.text)
+    } catch (e) {
+      console.error(e)
+      setError(
+        e instanceof Error
+          ? `PDF 읽기 실패: ${e.message}`
+          : "PDF에서 텍스트를 읽는 중 오류가 발생했습니다."
+      )
+      setFile(null)
+      setFileContent(previousContent)
+    } finally {
+      setIsParsingPdf(false)
     }
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
+    if (isParsingPdf) return
     const droppedFile = e.dataTransfer.files[0]
     if (droppedFile) {
       handleFileChange(droppedFile)
@@ -52,7 +106,7 @@ export function MainInput({ onScan }: MainInputProps) {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
-    setIsDragging(true)
+    if (!isParsingPdf) setIsDragging(true)
   }
 
   const handleDragLeave = () => {
@@ -68,11 +122,13 @@ export function MainInput({ onScan }: MainInputProps) {
   const handleScan = () => {
     const content = activeTab === "text" ? textContent : fileContent
     if (content.trim()) {
-      onScan(content)
+      onScan({ content })
     }
   }
 
-  const isDisabled = activeTab === "text" ? !textContent.trim() : !fileContent
+  const isDisabled =
+    isParsingPdf ||
+    (activeTab === "text" ? !textContent.trim() : !fileContent.trim())
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4">
@@ -118,6 +174,7 @@ export function MainInput({ onScan }: MainInputProps) {
                 type="file"
                 accept=".txt,.pdf"
                 className="hidden"
+                disabled={isParsingPdf}
                 onChange={(e) => {
                   const selectedFile = e.target.files?.[0]
                   if (selectedFile) handleFileChange(selectedFile)
@@ -135,19 +192,32 @@ export function MainInput({ onScan }: MainInputProps) {
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                 >
-                  <Upload className="h-10 w-10 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground mb-2">
-                    파일을 드래그하거나 클릭하여 업로드
-                  </p>
-                  <p className="text-sm text-muted-foreground/70 mb-4">
-                    .txt, .pdf 파일 지원
-                  </p>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    파일 선택
-                  </Button>
+                  {isParsingPdf ? (
+                    <>
+                      <Loader2 className="h-10 w-10 text-primary mb-4 animate-spin" />
+                      <p className="text-muted-foreground mb-2">
+                        {pdfStage === "text"
+                          ? "PDF에서 텍스트를 읽는 중…"
+                          : "Unstructured로 텍스트를 추출하는 중…"}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-10 w-10 text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground mb-2">
+                        파일을 드래그하거나 클릭하여 업로드
+                      </p>
+                      <p className="text-sm text-muted-foreground/70 mb-4">
+                        .txt, .pdf 파일 지원
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        파일 선택
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="border rounded-lg p-4 min-h-[200px] md:min-h-[280px]">
@@ -172,10 +242,10 @@ export function MainInput({ onScan }: MainInputProps) {
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="bg-muted/50 rounded-md p-3 max-h-[180px] overflow-y-auto">
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-6">
-                      {fileContent.slice(0, 500)}
-                      {fileContent.length > 500 && "..."}
+                  <div className="bg-muted/50 rounded-md p-3 max-h-[220px] overflow-y-auto">
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {fileContent.slice(0, 4000)}
+                      {fileContent.length > 4000 && "…"}
                     </p>
                   </div>
                 </div>
@@ -192,7 +262,11 @@ export function MainInput({ onScan }: MainInputProps) {
             onClick={handleScan}
             disabled={isDisabled}
           >
-            <Search className="h-5 w-5" />
+            {isParsingPdf ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Search className="h-5 w-5" />
+            )}
             허점 스캔하기
           </Button>
         </CardContent>

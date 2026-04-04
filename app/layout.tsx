@@ -1,14 +1,11 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: '크리틱 스캐너 | 발표 허점을 미리 발견하세요',
-  description: 'AI가 만든 발표 자료의 논리적 취약점과 예상 반론을 미리 파악하고, 질문에 자신있게 대답하세요.',
+  title: 'UReady.ai — 발표 허점 스캐너',
+  description:
+    'AI가 생성한 환각과 논리적 취약점을 빠르게 찾아 발표를 준비하세요.',
   generator: 'v0.app',
   keywords: ['발표', 'AI', '논리', '허점', '대학생', '과제', '프레젠테이션'],
   icons: {
@@ -32,7 +29,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f8f8f8' },
+    { media: '(prefers-color-scheme: light)', color: '#d32d2f' },
     { media: '(prefers-color-scheme: dark)', color: '#1a1a2e' },
   ],
   width: 'device-width',
@@ -46,7 +43,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="font-sans antialiased">
+      <body className="antialiased">
         {children}
         <Analytics />
       </body>

@@ -1,0 +1,165 @@
+"use client"
+
+import { useEffect, useState } from "react"
+
+type LoadingScreenProps = {
+  displayFilename: string
+  onLogoClick: () => void
+}
+
+const LOG_LINES = [
+  "[시스템] 문서 본문을 불러왔습니다.",
+  "[분석] 의미 단위로 구간을 나누는 중…",
+  "[검색] 주요 수치·주장을 웹에서 교차 확인 중…",
+  "[모델] 논리 허점·반론 후보를 정리하는 중…",
+  "[출력] 리포트 카드 형식으로 묶는 중…",
+]
+
+const INSIGHT_ROTATION_MS = 5_000
+
+const INSIGHT_MESSAGES = [
+  `💬 AI가 생성한 문장은 그럴듯하게 들리지만,
+정작 "왜요?"라는 질문 앞에서 무너지는 경우가 많아요.`,
+  "🔎 논리 흐름을 따라가는 중...",
+  "📌 당신이 진짜 설명할 수 있는 발표를 만들기 위해서요.",
+  "⏳ 거의 다 됐어요. 조금만 기다려주세요.",
+] as const
+
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+      />
+    </svg>
+  )
+}
+
+export function LoadingScreen({
+  displayFilename,
+  onLogoClick,
+}: LoadingScreenProps) {
+  const [progress, setProgress] = useState(0)
+  const [visibleLogCount, setVisibleLogCount] = useState(1)
+  const [insightIndex, setInsightIndex] = useState(0)
+
+  useEffect(() => {
+    const start = Date.now()
+    const id = window.setInterval(() => {
+      const elapsed = Date.now() - start
+      const t = Math.min(1, elapsed / 42000)
+      const eased = 1 - Math.exp(-t * 2.8)
+      setProgress(Math.min(89, Math.floor(eased * 90)))
+    }, 160)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let n = 1
+    const id = window.setInterval(() => {
+      n = Math.min(LOG_LINES.length, n + 1)
+      setVisibleLogCount(n)
+      if (n >= LOG_LINES.length) window.clearInterval(id)
+    }, 2200)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setInsightIndex((i) => (i + 1) % INSIGHT_MESSAGES.length)
+    }, INSIGHT_ROTATION_MS)
+    return () => window.clearInterval(id)
+  }, [])
+
+  return (
+    <div
+      id="screen-loading"
+      className="flex min-h-screen flex-col bg-uready-gray-50"
+    >
+      <nav className="flex h-14 shrink-0 items-center border-b border-uready-gray-200 bg-white px-4 sm:px-8">
+        <button
+          type="button"
+          onClick={onLogoClick}
+          className="logo flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left"
+        >
+          <div className="logo-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-uready-red text-base font-black tracking-tight text-white">
+            U
+          </div>
+          <span className="logo-text text-[17px] font-bold tracking-tight text-uready-gray-900">
+            Ready<span className="text-uready-red">.ai</span>
+          </span>
+        </button>
+      </nav>
+
+      <div className="loading-body flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
+        <div className="loading-card w-full max-w-[520px] rounded-2xl border border-uready-gray-200 bg-white px-8 py-9 text-center shadow-uready-lg sm:px-10 sm:py-10">
+          <div className="loading-icon-wrap mx-auto mb-6 flex h-[72px] w-[72px] items-center justify-center rounded-[18px] bg-uready-red-light text-primary">
+            <DocumentIcon className="h-10 w-10" />
+          </div>
+
+          <div className="loading-title text-[19px] font-extrabold tracking-tight text-uready-gray-900 sm:text-[21px]">
+            지금 자료를 꼼꼼히 읽고 있어요.
+          </div>
+          <div
+            className="loading-filename mt-2 text-[13px] text-uready-gray-500"
+            id="loading-filename"
+          >
+            {displayFilename}
+          </div>
+
+          <div className="progress-bar-wrap mt-8">
+            <div className="progress-track h-2 overflow-hidden rounded-full bg-uready-gray-200">
+              <div
+                className="progress-fill h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+                id="progress-fill"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="progress-label mt-2 text-center">
+              <span
+                className="text-[11px] font-semibold tracking-wide text-uready-gray-400"
+                id="progress-label"
+              >
+                {progress}% COMPLETE
+              </span>
+            </div>
+          </div>
+
+          <p
+            className="insight-text mt-8 min-h-[4.5rem] text-left text-[13px] leading-relaxed whitespace-pre-line text-uready-gray-600"
+            id="insight-text"
+            aria-live="polite"
+          >
+            {INSIGHT_MESSAGES[insightIndex]}
+          </p>
+
+          <div
+            className="log-box mt-5 min-h-[100px] rounded-xl border border-uready-gray-200 bg-uready-gray-50 px-4 py-3 text-left"
+            id="log-box"
+          >
+            <ul className="space-y-1.5 font-mono text-[11px] leading-snug text-uready-gray-500">
+              {LOG_LINES.slice(0, visibleLogCount).map((line, i) => (
+                <li key={i} className="animate-in fade-in-0 duration-300">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="loading-hint mt-6 text-[12px] text-uready-gray-400">
+            브라우저를 닫지 마세요. 분석이 완료되면 즉시 리포트가 생성됩니다.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}

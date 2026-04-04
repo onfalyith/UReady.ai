@@ -1,0 +1,50 @@
+import {
+  presentationAnalysisSchema,
+  type PresentationAnalysis,
+} from "@/lib/ai/schema"
+
+export async function analyzePresentationText(
+  text: string
+): Promise<
+  | { ok: true; data: PresentationAnalysis }
+  | { ok: false; message: string }
+> {
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  })
+
+  const raw: unknown = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    const o = raw as {
+      error?: unknown
+      retryAfterSeconds?: unknown
+      code?: unknown
+    }
+    let base =
+      typeof o.error === "string"
+        ? o.error
+        : "분석 요청에 실패했습니다."
+    if (
+      res.status === 503 &&
+      base === "분석 요청에 실패했습니다."
+    ) {
+      base =
+        "Gemini API 키가 없거나 서버 설정 오류입니다. .env.local에 GOOGLE_GENERATIVE_AI_API_KEY를 넣고 개발 서버를 재시작해 주세요."
+    }
+    const retry =
+      typeof o.retryAfterSeconds === "number" && o.retryAfterSeconds > 0
+        ? ` (약 ${o.retryAfterSeconds}초 후 재시도 가능)`
+        : ""
+    return { ok: false, message: base + retry }
+  }
+
+  const parsed = presentationAnalysisSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { ok: false, message: "분석 응답 형식이 올바르지 않습니다." }
+  }
+
+  return { ok: true, data: parsed.data }
+}

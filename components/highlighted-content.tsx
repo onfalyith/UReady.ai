@@ -13,7 +13,7 @@ interface HighlightedContentProps {
 interface TextSegment {
   text: string
   flawId?: string
-  category?: "weakness" | "counter"
+  tag?: "논리적 취약점" | "반론"
 }
 
 export function HighlightedContent({ 
@@ -58,7 +58,7 @@ export function HighlightedContent({
       segments.push({
         text: content.slice(flaw.startIndex, flaw.endIndex),
         flawId: flaw.id,
-        category: flaw.category
+        tag: flaw.tag,
       })
 
       lastIndex = flaw.endIndex
@@ -84,9 +84,10 @@ export function HighlightedContent({
       {segments.map((segment, index) => {
         if (segment.flawId) {
           const isActive = segment.flawId === activeFlawId
-          const highlightClass = segment.category === "weakness" 
-            ? "highlight-weakness" 
-            : "highlight-counter"
+          const highlightClass =
+            segment.tag === "논리적 취약점"
+              ? "highlight-weakness"
+              : "highlight-counter"
           
           return (
             <span
