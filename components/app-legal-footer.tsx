@@ -2,12 +2,12 @@
 export function AppLegalFooter() {
   return (
     <footer
-      className="border-t border-uready-gray-200 bg-uready-gray-50 px-4 py-5 text-[11px] leading-relaxed text-uready-gray-600"
+      className="border-t border-uready-gray-200 bg-uready-gray-50 px-4 pt-5 pb-[56px] text-[11px] leading-relaxed text-uready-gray-600"
       role="contentinfo"
     >
       <div className="mx-auto max-w-3xl">
         <p className="mb-3 text-sm font-bold text-uready-gray-900">
-          👀 꼭 확인하세요!
+          👀 이건 알고 쓰기로 해요
         </p>
         <ul className="m-0 list-disc space-y-2 pl-4">
           <li>

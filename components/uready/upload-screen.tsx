@@ -92,11 +92,13 @@ export function UploadScreen({
           </strong>{" "}
           찾아냅니다.
           <br />
-          대학생{" "}
+          그럴듯해 보일수록 커지는{" "}
           <strong className="font-semibold text-uready-gray-900">
-            10명 중 5명
+            발표 불안,
+          </strong>{" "}
+          <strong className="font-semibold text-primary">
+            내 것으로 준비하세요.
           </strong>
-          이 겪는 발표 불안, 내 것으로 준비하세요.
         </p>
 
         <div className="relative w-full max-w-[760px] overflow-hidden rounded-3xl border border-uready-gray-200 bg-white shadow-uready-md">
@@ -122,9 +124,8 @@ export function UploadScreen({
                 value={draftText}
                 onChange={(e) => onDraftTextChange(e.target.value)}
                 disabled={busy}
-                placeholder={`발표 대본을 여기에 붙여넣으세요.
-
-예: '안녕하십니까 이번 발표 주제를 선정한 이유는 다음과 같은 현상에 주목하여...'`}
+                placeholder={`텍스트를 여기에 붙여 넣으세요.
+(예: 안녕하십니까 이번 발표 주제를 선정한 이유는 다음과 같은 현상에 주목하여...)`}
                 rows={6}
                 className="h-[140px] w-full resize-none rounded-[10px] border border-uready-gray-200 bg-uready-gray-50 px-3.5 py-3.5 text-sm text-uready-gray-700 outline-none transition-colors placeholder:text-uready-gray-400 focus:border-primary focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
               />

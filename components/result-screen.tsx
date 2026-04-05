@@ -6,7 +6,12 @@ import { IssueCard } from "@/components/issue-card"
 import type { AnalysisMaterialMeta } from "@/lib/ai/schema"
 import type { PresentationAnalysis } from "@/types/analysis"
 
-function buildCopyText(data: PresentationAnalysis, displayFilename: string) {
+function buildCopyText(
+  data: PresentationAnalysis,
+  displayFilename: string,
+  opts?: { usedNoToolFallback?: boolean }
+) {
+  const noWeb = opts?.usedNoToolFallback === true
   const lines = [
     "📋 UReady.ai 분석 결과",
     "",
@@ -14,22 +19,28 @@ function buildCopyText(data: PresentationAnalysis, displayFilename: string) {
     `허점 수: ${data.issues.length}`,
     "",
   ]
+  if (noWeb) {
+    lines.push("(이번 분석: 웹 검색 없음 — 출처·근거 블록 생략)")
+    lines.push("")
+  }
   data.issues.forEach((issue, i) => {
     lines.push(`허점 #${i + 1} (${issue.location})`)
     lines.push(`원문: ${issue.originalText}`)
     lines.push(`논리적 취약점: ${issue.logicalWeakness}`)
     lines.push(`반론: ${issue.counterArgument}`)
     lines.push(`개선 방향: ${issue.improvementQuestion}`)
-    if (issue.sourceReliability === "low_credibility") {
-      lines.push("(근거 자료 출처의 신뢰도가 낮습니다)")
-    } else if (issue.sourceReliability === "unverified") {
-      lines.push("(근거 자료의 출처가 확인되지 않습니다)")
+    if (!noWeb) {
+      if (issue.sourceReliability === "low_credibility") {
+        lines.push("(근거 자료 출처의 신뢰도가 낮습니다)")
+      } else if (issue.sourceReliability === "unverified") {
+        lines.push("(근거 자료의 출처가 확인되지 않습니다)")
+      }
+      issue.evidence.forEach((ev) => {
+        lines.push(
+          `  - [${ev.stance}] ${ev.title} | ${ev.url}\n    ${ev.snippet}`
+        )
+      })
     }
-    issue.evidence.forEach((ev) => {
-      lines.push(
-        `  - [${ev.stance}] ${ev.title} | ${ev.url}\n    ${ev.snippet}`
-      )
-    })
     lines.push("")
   })
   if (data.issues.length === 0) {
@@ -58,7 +69,9 @@ export function ResultScreen({
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(
-      buildCopyText(analysis, displayFilename)
+      buildCopyText(analysis, displayFilename, {
+        usedNoToolFallback: materialMeta?.usedNoToolFallback === true,
+      })
     )
     setToastOpen(true)
     window.setTimeout(() => setToastOpen(false), 3500)
@@ -154,6 +167,20 @@ export function ResultScreen({
           </div>
         ) : null}
 
+        {materialMeta?.usedNoToolFallback ? (
+          <div
+            className="mb-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950"
+            role="status"
+          >
+            <p className="m-0 font-semibold">웹 검색 없이 분석되었습니다</p>
+            <p className="mt-1.5 mb-0 leading-relaxed text-violet-900/90">
+              웹 검색·외부 출처는 사용하지 않았습니다. 위치·원문 문장은 제출
+              자료만 기준으로 표시되며, 수치·주장은 발표 전에 직접 확인하는 것이
+              좋습니다.
+            </p>
+          </div>
+        ) : null}
+
         {materialMeta?.truncatedForModel ? (
           <div
             className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -187,6 +214,7 @@ export function ResultScreen({
                 key={`${issue.location}-${index}`}
                 issue={issue}
                 index={index}
+                usedNoToolFallback={materialMeta?.usedNoToolFallback === true}
               />
             ))}
           </ul>

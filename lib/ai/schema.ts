@@ -26,8 +26,18 @@ function pickString(
   for (const k of keys) {
     const v = row[k]
     if (typeof v === "string" && v.trim()) return v.trim()
+    if (typeof v === "number" && Number.isFinite(v)) return String(v)
   }
   return fallback
+}
+
+/** 모델이 evidence 더미와 혼동하거나 빈 인용을 낼 때 */
+function normalizeVerbatimQuote(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ""
+  if (t === "-" || t === "—" || t === "–") return ""
+  if (t === "(원문 인용 없음)") return ""
+  return t
 }
 
 function normalizeStance(raw: unknown): EvidenceStance {
@@ -162,19 +172,29 @@ export const presentationIssueSchema = z
   .passthrough()
   .transform((raw) => {
     const row = raw as Record<string, unknown>
-    const originalText = pickString(
+    const originalTextRaw = pickString(
       row,
       [
         "originalText",
         "original_text",
+        "원문",
+        "원문문장",
+        "원문_문장",
+        "quotedText",
+        "quotation",
+        "발췌",
+        "문장",
         "quote",
         "excerpt",
+        "body",
+        "content",
         "text",
         "sourceText",
         "source_text",
       ],
       ""
     )
+    const originalText = normalizeVerbatimQuote(originalTextRaw)
     const evidenceIn = Array.isArray(row.evidence) ? row.evidence : []
     const evidence = evidenceIn
       .map((item) => {
@@ -200,7 +220,11 @@ export const presentationIssueSchema = z
     )
 
     return {
-      location: pickString(row, ["location", "Location"], "—"),
+      location: pickString(
+        row,
+        ["location", "Location", "위치", "page", "sentenceIndex", "sentence_index"],
+        "—"
+      ),
       originalText: originalText || "(원문 인용 없음)",
       logicalWeakness: pickString(
         row,
@@ -223,7 +247,8 @@ export const presentationIssueSchema = z
   })
   .pipe(presentationIssueStrictSchema)
 
-const presentationAnalysisStrictSchema = z.object({
+/** 텍스트 JSON·generateObject 공통 — 이 형태로만 issues 를 확정합니다 */
+export const presentationAnalysisStrictSchema = z.object({
   issues: z.array(presentationIssueStrictSchema),
 })
 
@@ -237,6 +262,8 @@ export const materialMetaSchema = z.object({
   maxChars: z.number().int().positive(),
   usedChunkedAnalysis: z.boolean().optional(),
   chunkCount: z.number().int().positive().optional(),
+  /** 검색 그라운딩 본문 없음 등으로 도구 없는 폴백 분석을 쓴 경우 */
+  usedNoToolFallback: z.boolean().optional(),
 })
 
 export type AnalysisMaterialMeta = z.infer<typeof materialMetaSchema>

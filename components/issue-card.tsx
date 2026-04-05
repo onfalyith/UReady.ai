@@ -15,13 +15,52 @@ function sourceTrustNotice(
   return null
 }
 
+/** 노툴 폴백: 원문은 originalText 우선(스키마 더미 evidence는 UI에 안 씀) */
+function noToolQuotationText(issue: PresentationIssue): string {
+  const ot = issue.originalText?.trim()
+  if (!ot || ot === "(원문 인용 없음)") return "—"
+  if (ot === "-" || ot === "—" || ot === "–") return "—"
+  return issue.originalText
+}
+
+/** 모델이 시스템 지시를 location에 붙여 넣은 경우 */
+function looksLikeInstructionalLocation(s: string): boolean {
+  if (s.length > 160) return true
+  const markers = [
+    "페이지 번호가 있으면",
+    "아래에 붙은",
+    "반드시 채우",
+    "문장·문단 순번",
+    "코드 펜스",
+    "순수 JSON",
+    "originalText",
+    "location 필드",
+    "지시문을",
+    "한 줄짜리 위치",
+  ]
+  return markers.some((m) => s.includes(m))
+}
+
+function noToolLocationText(issue: PresentationIssue): string {
+  const loc = issue.location?.trim()
+  if (!loc || loc === "—") return "—"
+  if (looksLikeInstructionalLocation(loc)) return "—"
+  return issue.location
+}
+
 type IssueCardProps = {
   issue: PresentationIssue
   index: number
+  usedNoToolFallback?: boolean
 }
 
-export function IssueCard({ issue, index }: IssueCardProps) {
-  const trustNotice = sourceTrustNotice(issue.sourceReliability)
+export function IssueCard({
+  issue,
+  index,
+  usedNoToolFallback = false,
+}: IssueCardProps) {
+  const trustNotice =
+    usedNoToolFallback ? null : sourceTrustNotice(issue.sourceReliability)
 
   return (
     <li className="overflow-hidden rounded-2xl border border-uready-gray-200 bg-white shadow-uready-sm">
@@ -36,7 +75,9 @@ export function IssueCard({ issue, index }: IssueCardProps) {
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
             위치
           </h3>
-          <p className="text-sm text-uready-gray-800">{issue.location}</p>
+          <p className="text-sm text-uready-gray-800">
+            {usedNoToolFallback ? noToolLocationText(issue) : issue.location}
+          </p>
         </section>
 
         <div className="my-4 h-px bg-uready-gray-100" />
@@ -46,7 +87,7 @@ export function IssueCard({ issue, index }: IssueCardProps) {
             원문 문장
           </h3>
           <p className="rounded-r-md border-l-[3px] border-primary bg-highlight px-4 py-3.5 text-sm font-bold leading-relaxed text-uready-gray-900">
-            {issue.originalText}
+            {usedNoToolFallback ? noToolQuotationText(issue) : issue.originalText}
           </p>
         </section>
 
@@ -94,14 +135,17 @@ export function IssueCard({ issue, index }: IssueCardProps) {
           </>
         ) : null}
 
-        <div className="my-4 h-px bg-uready-gray-100" />
-
-        <section>
-          <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            출처 및 근거
-          </h3>
-          <EvidenceList items={issue.evidence} />
-        </section>
+        {!usedNoToolFallback ? (
+          <>
+            <div className="my-4 h-px bg-uready-gray-100" />
+            <section>
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+                출처 및 근거
+              </h3>
+              <EvidenceList items={issue.evidence} />
+            </section>
+          </>
+        ) : null}
       </div>
     </li>
   )

@@ -1,10 +1,11 @@
 import "server-only"
 
-import { generateText, stepCountIs, type ProviderMetadata } from "ai"
+import { generateObject, generateText, stepCountIs, type ProviderMetadata } from "ai"
 import { google } from "@ai-sdk/google"
 import { ZodError } from "zod"
 import {
   presentationAnalysisSchema,
+  presentationAnalysisStrictSchema,
   type AnalysisMaterialMeta,
   type PresentationAnalysis,
   type PresentationIssue,
@@ -12,7 +13,9 @@ import {
 import {
   buildChunkedPresentationUserPrompt,
   buildJsonRepairUserPrompt,
+  buildNoToolFallbackUserPrompt,
   buildPresentationUserPrompt,
+  PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
   PRESENTATION_ANALYSIS_SYSTEM,
   PRESENTATION_JSON_REPAIR_SYSTEM,
 } from "@/lib/ai/prompt"
@@ -44,6 +47,124 @@ export function getAnalysisModelMaxInputChars(): number {
 
 /** 하위 호환: 과거 이름 — 기본값 상수만 노출 */
 export const ANALYSIS_MODEL_MAX_INPUT_CHARS = ANALYSIS_MODEL_MAX_INPUT_CHARS_DEFAULT
+
+/** Google Search 다단계 후 JSON 출력까지 여유 */
+const DEFAULT_ANALYSIS_GENERATE_MAX_STEPS = 40
+const MIN_ANALYSIS_GENERATE_STEPS = 8
+const MAX_ANALYSIS_GENERATE_STEPS = 64
+
+function getAnalysisGenerateMaxSteps(): number {
+  const raw = process.env.ANALYSIS_GENERATE_MAX_STEPS?.trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (
+      Number.isFinite(n) &&
+      n >= MIN_ANALYSIS_GENERATE_STEPS &&
+      n <= MAX_ANALYSIS_GENERATE_STEPS
+    ) {
+      return n
+    }
+  }
+  return DEFAULT_ANALYSIS_GENERATE_MAX_STEPS
+}
+
+/** salvage/text가 비었을 때 같은 프롬프트로 generateText 재호출 횟수 (기본 2) */
+function getAnalysisGenerateEmptyRetryCount(): number {
+  const raw = process.env.ANALYSIS_GENERATE_EMPTY_RETRY?.trim()
+  if (raw === "0" || raw === "false") return 0
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= 0 && n <= 3) return n
+  }
+  return 2
+}
+
+function isNoToolFallbackDisabled(): boolean {
+  const v = process.env.ANALYSIS_DISABLE_NO_TOOL_FALLBACK?.trim().toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+function summarizeResponseMessagesForDebug(
+  messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined
+): Array<{
+  idx: number
+  role: string | undefined
+  contentShape: string
+  partTypes?: string[]
+}> {
+  if (!messages?.length) return []
+  return messages.map((m, idx) => {
+    const c = m.content
+    let partTypes: string[] | undefined
+    if (Array.isArray(c)) {
+      partTypes = c.map((p) =>
+        p &&
+        typeof p === "object" &&
+        "type" in p &&
+        typeof (p as { type: unknown }).type === "string"
+          ? (p as { type: string }).type
+          : "?"
+      )
+    }
+    const shape =
+      typeof c === "string"
+        ? `string(${c.length})`
+        : Array.isArray(c)
+          ? "parts"
+          : c == null
+            ? "null"
+            : typeof c
+    return { idx, role: m.role, contentShape: shape, partTypes }
+  })
+}
+
+/** 개발: 1차 응답에서 텍스트를 전혀 못 모을 때 원인 추적용 */
+function logDevEmptyGenerateTextDebug(
+  result: {
+    text: string
+    finishReason: string
+    rawFinishReason?: string | undefined
+    steps: ReadonlyArray<{
+      stepNumber: number
+      finishReason: string
+      text: string
+      reasoningText?: string | undefined
+      toolCalls: ReadonlyArray<Record<string, unknown>>
+      content: ReadonlyArray<{ type?: string }>
+    }>
+    response: {
+      messages?: ReadonlyArray<{ role?: string; content?: unknown }>
+    }
+  },
+  context: string
+): void {
+  if (process.env.NODE_ENV === "production") return
+
+  const steps = result.steps.map((s) => ({
+    stepNumber: s.stepNumber,
+    finishReason: s.finishReason,
+    textChars: s.text?.length ?? 0,
+    reasoningChars: s.reasoningText?.length ?? 0,
+    toolCallCount: s.toolCalls.length,
+    toolNames: s.toolCalls.map((tc) =>
+      typeof tc.toolName === "string" ? tc.toolName : "?"
+    ),
+    contentTypes: s.content?.map((p) => p.type ?? "?") ?? [],
+  }))
+
+  console.warn(`[analyze][dev] ${context}`, {
+    finishReason: result.finishReason,
+    rawFinishReason: result.rawFinishReason,
+    topLevelTextChars: result.text?.length ?? 0,
+    reasoningTextChars:
+      "reasoningText" in result && typeof result.reasoningText === "string"
+        ? result.reasoningText.length
+        : 0,
+    stepCount: result.steps.length,
+    steps,
+    responseMessages: summarizeResponseMessagesForDebug(result.response.messages),
+  })
+}
 
 export type GroundingStepSnapshot = {
   stepNumber: number
@@ -148,6 +269,58 @@ function extractTextFromContentParts(
     .join("")
 }
 
+/** assistant 메시지·스텝 content에서 text / reasoning / 일부 tool-result 문자열 수집 */
+function extractAllTextFromMessageContent(content: unknown): string[] {
+  const out: string[] = []
+  if (typeof content === "string") {
+    if (content.trim()) out.push(content)
+    return out
+  }
+  if (!Array.isArray(content)) return out
+  for (const p of content) {
+    if (!p || typeof p !== "object") continue
+    const o = p as Record<string, unknown>
+    const ty = typeof o.type === "string" ? o.type : ""
+    if (typeof o.text === "string" && o.text.trim()) {
+      if (
+        ty === "text" ||
+        ty === "reasoning" ||
+        ty === "thinking" ||
+        ty === ""
+      ) {
+        out.push(o.text)
+      }
+    }
+    if (ty === "tool-result" && o.output != null) {
+      const op = o.output
+      if (typeof op === "string" && op.trim()) {
+        out.push(op)
+      } else if (typeof op === "object") {
+        try {
+          const s = JSON.stringify(op)
+          if (s.length < 12_000 && /issues|text|snippet/i.test(s)) {
+            out.push(s)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  return out
+}
+
+function allAssistantTextsJoined(
+  messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined
+): string {
+  const parts: string[] = []
+  for (const m of messages ?? []) {
+    if (m.role !== "assistant") continue
+    parts.push(...extractAllTextFromMessageContent(m.content))
+  }
+  return parts.join("\n\n").trim()
+}
+
 function textFromResponseMessages(
   messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined
 ): string {
@@ -182,8 +355,10 @@ function jsonLikeness(s: string): number {
 
 function collectAnalysisTextCandidates(result: {
   text: string
+  reasoningText?: string | undefined
   steps: ReadonlyArray<{
     text: string
+    reasoningText?: string | undefined
     content: ReadonlyArray<{ type?: string; text?: string }>
   }>
   response: { messages?: ReadonlyArray<{ role?: string; content?: unknown }> }
@@ -198,9 +373,19 @@ function collectAnalysisTextCandidates(result: {
   }
 
   push(getAggregatedAssistantText(result))
+  push(allAssistantTextsJoined(result.response.messages))
   push(textFromResponseMessages(result.response.messages))
+  if (result.reasoningText?.trim()) {
+    push(result.reasoningText)
+  }
 
   for (const step of result.steps) {
+    push(
+      extractAllTextFromMessageContent(step.content as unknown).join("\n\n")
+    )
+    if (step.reasoningText?.trim()) {
+      push(step.reasoningText)
+    }
     push(extractTextFromContentParts(step.content))
     push(step.text)
   }
@@ -241,8 +426,10 @@ function parseJsonFromModelBlock(inner: string): unknown {
 
 type GenerateTextResultLike = {
   text: string
+  reasoningText?: string | undefined
   steps: ReadonlyArray<{
     text: string
+    reasoningText?: string | undefined
     content: ReadonlyArray<{ type?: string; text?: string }>
   }>
   response: { messages?: ReadonlyArray<{ role?: string; content?: unknown }> }
@@ -303,6 +490,90 @@ type PassResult = {
   analysis: PresentationAnalysis
   providerMetadata: ProviderMetadata | undefined
   groundingSteps: GroundingStepSnapshot[]
+  /** 검색 단계에서 본문이 비어 도구 없는 폴백으로만 분석 성공 */
+  usedNoToolFallback?: boolean
+}
+
+/**
+ * 검색 그라운딩만 반복되고 assistant 텍스트가 비는 경우 — 도구 없이 자료만으로 재시도.
+ */
+async function tryNoToolFallbackPass(
+  modelId: string,
+  materialExcerpt: string,
+  primaryGroundingSteps: GroundingStepSnapshot[]
+): Promise<PassResult | null> {
+  if (isNoToolFallbackDisabled()) return null
+
+  try {
+    const structured = await generateObject({
+      model: google(modelId),
+      schema: presentationAnalysisStrictSchema,
+      schemaName: "PresentationAnalysis",
+      schemaDescription:
+        "발표 자료에서 찾은 허점 목록. 각 이슈의 location은 짧은 위치 표기만, originalText는 자료에서 문자 그대로 복사한 인용.",
+      system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
+      prompt: buildNoToolFallbackUserPrompt(materialExcerpt),
+    })
+    const normalized = presentationAnalysisSchema.parse(structured.object)
+    if (normalized.issues.length > 0) {
+      console.warn(
+        "[analyze] 검색 단계 본문 없음 → generateObject(노툴)로 분석 완료 (웹 근거 없음)"
+      )
+      return {
+        analysis: normalized,
+        providerMetadata: structured.providerMetadata,
+        groundingSteps: primaryGroundingSteps,
+        usedNoToolFallback: true,
+      }
+    }
+  } catch (e) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[analyze] generateObject 노툴 폴백 실패, 텍스트 JSON 경로로 재시도:",
+        e
+      )
+    }
+  }
+
+  const fb = await generateText({
+    model: google(modelId),
+    stopWhen: stepCountIs(2),
+    system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
+    prompt: buildNoToolFallbackUserPrompt(materialExcerpt),
+  })
+
+  const direct = tryParsePresentationFromGenerateResult(fb)
+  if (direct.ok) {
+    console.warn(
+      "[analyze] 검색 단계 본문 없음 → 도구 없는 폴백으로 분석 완료 (웹 근거 없음)"
+    )
+    return {
+      analysis: direct.data,
+      providerMetadata: fb.providerMetadata,
+      groundingSteps: primaryGroundingSteps,
+      usedNoToolFallback: true,
+    }
+  }
+
+  const fbSalvage = collectAnalysisTextCandidates(fb).join("\n\n---\n\n")
+  if (!fbSalvage.trim() && !fb.text?.trim()) return null
+
+  const repair = await generateText({
+    model: google(modelId),
+    stopWhen: stepCountIs(4),
+    system: PRESENTATION_JSON_REPAIR_SYSTEM,
+    prompt: buildJsonRepairUserPrompt(materialExcerpt, fbSalvage),
+  })
+  const repaired = tryParsePresentationFromGenerateResult(repair)
+  if (!repaired.ok) return null
+
+  console.warn("[analyze] 도구 없는 폴백 + JSON repair로 분석 완료")
+  return {
+    analysis: repaired.data,
+    providerMetadata: fb.providerMetadata,
+    groundingSteps: primaryGroundingSteps,
+    usedNoToolFallback: true,
+  }
 }
 
 async function executePresentationAnalysisPass(
@@ -310,18 +581,22 @@ async function executePresentationAnalysisPass(
   repairMaterialExcerpt: string
 ): Promise<PassResult> {
   const modelId = getGeminiAnalysisModelId()
+  const maxSteps = getAnalysisGenerateMaxSteps()
+  const emptyRetryBudget = getAnalysisGenerateEmptyRetryCount()
 
-  const result = await generateText({
-    model: google(modelId),
-    stopWhen: stepCountIs(24),
-    tools: {
-      google_search: google.tools.googleSearch({}),
-    },
-    system: PRESENTATION_ANALYSIS_SYSTEM,
-    prompt: userPrompt,
-  })
+  const runPrimaryGenerate = () =>
+    generateText({
+      model: google(modelId),
+      stopWhen: stepCountIs(maxSteps),
+      tools: {
+        google_search: google.tools.googleSearch({}),
+      },
+      system: PRESENTATION_ANALYSIS_SYSTEM,
+      prompt: userPrompt,
+    })
 
-  const firstPass = tryParsePresentationFromGenerateResult(result)
+  let result = await runPrimaryGenerate()
+  let firstPass = tryParsePresentationFromGenerateResult(result)
   if (firstPass.ok) {
     return {
       analysis: firstPass.data,
@@ -330,8 +605,48 @@ async function executePresentationAnalysisPass(
     }
   }
 
-  const salvage = collectAnalysisTextCandidates(result).join("\n\n---\n\n")
+  let salvage = collectAnalysisTextCandidates(result).join("\n\n---\n\n")
+  let salvageEmpty = !salvage.trim() && !result.text?.trim()
+
+  if (salvageEmpty) {
+    logDevEmptyGenerateTextDebug(
+      result,
+      "1차 generateText — 파싱 실패 후 salvage·text 없음"
+    )
+    for (let attempt = 0; attempt < emptyRetryBudget && salvageEmpty; attempt++) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          `[analyze][dev] 빈 응답 재시도 ${attempt + 1}/${emptyRetryBudget} (maxSteps=${maxSteps})`
+        )
+      }
+      result = await runPrimaryGenerate()
+      firstPass = tryParsePresentationFromGenerateResult(result)
+      if (firstPass.ok) {
+        return {
+          analysis: firstPass.data,
+          providerMetadata: result.providerMetadata,
+          groundingSteps: collectGroundingSteps(result.steps),
+        }
+      }
+      salvage = collectAnalysisTextCandidates(result).join("\n\n---\n\n")
+      salvageEmpty = !salvage.trim() && !result.text?.trim()
+      if (salvageEmpty) {
+        logDevEmptyGenerateTextDebug(
+          result,
+          `1차 generateText — 재시도 ${attempt + 1} 후에도 salvage·text 없음`
+        )
+      }
+    }
+  }
+
   if (!salvage.trim() && !result.text?.trim()) {
+    const primaryGrounding = collectGroundingSteps(result.steps)
+    const recovered = await tryNoToolFallbackPass(
+      modelId,
+      repairMaterialExcerpt,
+      primaryGrounding
+    )
+    if (recovered) return recovered
     throw new Error("모델이 비어 있는 응답을 반환했습니다. 잠시 후 다시 시도해 주세요.")
   }
 
@@ -393,6 +708,7 @@ export async function runPresentationAnalysis(
         charLengthSentToModel: fullLen,
         truncatedForModel: false,
         maxChars,
+        ...(pass.usedNoToolFallback ? { usedNoToolFallback: true } : {}),
       },
     }
   }
@@ -413,6 +729,7 @@ export async function runPresentationAnalysis(
   const mergedGrounding: GroundingStepSnapshot[] = []
   let lastProvider: ProviderMetadata | undefined
   let stepBase = 0
+  let usedNoToolFallbackAny = false
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]!
@@ -422,6 +739,7 @@ export async function runPresentationAnalysis(
       chunks.length
     )
     const pass = await executePresentationAnalysisPass(userPrompt, chunk)
+    if (pass.usedNoToolFallback) usedNoToolFallbackAny = true
     mergedIssues.push(...pass.analysis.issues)
     mergedGrounding.push(
       ...offsetGroundingSteps(pass.groundingSteps, stepBase)
@@ -444,6 +762,7 @@ export async function runPresentationAnalysis(
       maxChars,
       usedChunkedAnalysis: true,
       chunkCount: chunks.length,
+      ...(usedNoToolFallbackAny ? { usedNoToolFallback: true } : {}),
     },
   }
 }
