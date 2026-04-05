@@ -6,6 +6,7 @@ import {
 } from "@/lib/rate-limit/upstash"
 import { runPresentationAnalysis } from "@/lib/ai/analyze"
 import {
+  materialMetaSchema,
   presentationAnalysisSchema,
   type PresentationAnalysis,
 } from "@/lib/ai/schema"
@@ -58,15 +59,18 @@ export async function POST(request: Request) {
   if (countSignificantChars(trimmed) < MIN_ANALYSIS_SIGNIFICANT_CHARS) {
     return Response.json(
       {
-        error: `분석할 텍스트가 너무 짧습니다. 공백 제외 ${MIN_ANALYSIS_SIGNIFICANT_CHARS}자 이상 입력해 주세요.`,
+        error:
+          "분석할 내용이 없습니다. 공백이 아닌 글자를 1자 이상 보내 주세요.",
       },
       { status: 400 }
     )
   }
 
   try {
-    const { analysis, providerMetadata, groundingSteps } =
+    const { analysis, providerMetadata, groundingSteps, materialMeta } =
       await runPresentationAnalysis(trimmed)
+
+    const metaValidated = materialMetaSchema.parse(materialMeta)
 
     const validated: PresentationAnalysis =
       presentationAnalysisSchema.parse(analysis)
@@ -87,11 +91,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const responseBody: PresentationAnalysis = {
+    const responseBody = {
       issues: validated.issues,
+      materialMeta: metaValidated,
     }
 
-    return Response.json(responseBody satisfies PresentationAnalysis)
+    return Response.json(responseBody)
   } catch (e) {
     const raw = e instanceof Error ? e.message : "분석 실패"
     console.error("[api/analyze]", e)

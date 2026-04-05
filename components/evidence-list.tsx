@@ -3,10 +3,10 @@
 import type { PresentationEvidence } from "@/types/analysis"
 
 function stanceBadgeClass(stance: PresentationEvidence["stance"]) {
-  if (stance === "supports") {
+  if (stance === "근거 확인") {
     return "bg-emerald-100 text-emerald-800 ring-emerald-200"
   }
-  if (stance === "contradicts") {
+  if (stance === "근거 다름") {
     return "bg-red-100 text-red-800 ring-red-200"
   }
   return "bg-uready-gray-200 text-uready-gray-700 ring-uready-gray-300"
@@ -31,7 +31,7 @@ export function EvidenceList({ items }: EvidenceListProps) {
               {ev.title}
             </span>
             <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ring-1 ring-inset ${stanceBadgeClass(ev.stance)}`}
+              className={`rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${stanceBadgeClass(ev.stance)}`}
             >
               {ev.stance}
             </span>

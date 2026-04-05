@@ -5,9 +5,12 @@ import { google } from "@ai-sdk/google"
 import { ZodError } from "zod"
 import {
   presentationAnalysisSchema,
+  type AnalysisMaterialMeta,
   type PresentationAnalysis,
+  type PresentationIssue,
 } from "@/lib/ai/schema"
 import {
+  buildChunkedPresentationUserPrompt,
   buildJsonRepairUserPrompt,
   buildPresentationUserPrompt,
   PRESENTATION_ANALYSIS_SYSTEM,
@@ -15,7 +18,32 @@ import {
 } from "@/lib/ai/prompt"
 import { getGeminiAnalysisModelId } from "@/lib/ai/gemini-model"
 
-const MAX_INPUT_CHARS = 120_000
+/**
+ * 기본 한도(한 번에 모델에 넣는 본문 글자 수 상한).
+ * 약 1회 분석·그라운딩 기준 1분 내외를 목표로 20만 자 근처로 둡니다.
+ * `ANALYSIS_MODEL_MAX_INPUT_CHARS` 환경변수로 20_000~400_000 범위에서 재정의 가능.
+ */
+export const ANALYSIS_MODEL_MAX_INPUT_CHARS_DEFAULT = 200_000
+
+/** 구간 경계에서 문맥 유지용 겹침(글자 수) */
+const CHUNK_OVERLAP_CHARS = 2_500
+
+const MIN_MODEL_INPUT_CHARS = 20_000
+const MAX_MODEL_INPUT_CHARS = 400_000
+
+export function getAnalysisModelMaxInputChars(): number {
+  const raw = process.env.ANALYSIS_MODEL_MAX_INPUT_CHARS?.trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= MIN_MODEL_INPUT_CHARS && n <= MAX_MODEL_INPUT_CHARS) {
+      return n
+    }
+  }
+  return ANALYSIS_MODEL_MAX_INPUT_CHARS_DEFAULT
+}
+
+/** 하위 호환: 과거 이름 — 기본값 상수만 노출 */
+export const ANALYSIS_MODEL_MAX_INPUT_CHARS = ANALYSIS_MODEL_MAX_INPUT_CHARS_DEFAULT
 
 export type GroundingStepSnapshot = {
   stepNumber: number
@@ -29,11 +57,46 @@ export type RunPresentationAnalysisResult = {
   providerMetadata: ProviderMetadata | undefined
   /** 모든 스텝의 메타·소스 스냅샷(감사·디버그·추후 저장) */
   groundingSteps: GroundingStepSnapshot[]
+  /** 서버에서 모델로 보낸 본문 길이·잘림·구간 분할 여부 */
+  materialMeta: AnalysisMaterialMeta
 }
 
-function truncateMaterial(text: string): string {
-  if (text.length <= MAX_INPUT_CHARS) return text
-  return text.slice(0, MAX_INPUT_CHARS)
+/** `chunkSize` 단위로 자르고, 다음 구간은 `overlap`만큼 앞과 겹칩니다. */
+export function splitMaterialIntoChunks(
+  text: string,
+  chunkSize: number,
+  overlap: number
+): string[] {
+  if (text.length <= chunkSize) return [text]
+  const safeOverlap = Math.min(Math.max(0, overlap), chunkSize - 1)
+  const chunks: string[] = []
+  let start = 0
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length)
+    chunks.push(text.slice(start, end))
+    if (end >= text.length) break
+    const nextStart = end - safeOverlap
+    start = nextStart > start ? nextStart : end
+  }
+  return chunks
+}
+
+function issueDedupeKey(issue: PresentationIssue): string {
+  const t = issue.originalText.replace(/\s+/g, " ").trim().slice(0, 320)
+  if (t.length > 0) return t
+  return `${issue.location}|${issue.logicalWeakness}`.slice(0, 320)
+}
+
+function dedupeMergedIssues(issues: PresentationIssue[]): PresentationIssue[] {
+  const seen = new Set<string>()
+  const out: PresentationIssue[] = []
+  for (const issue of issues) {
+    const k = issueDedupeKey(issue)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(issue)
+  }
+  return out
 }
 
 function collectGroundingSteps(
@@ -236,20 +299,17 @@ function parsePresentationAnalysisFromModelText(text: string): PresentationAnaly
   return presentationAnalysisSchema.parse(parsed)
 }
 
-/**
- * Gemini + Google Search 그라운딩. (도구 + API JSON 모드는 Gemini에서 동시 미지원 → 텍스트 JSON 후 Zod 검증)
- * 모델은 GEMINI_ANALYSIS_MODEL_ID 로 재정의 가능.
- */
-export async function runPresentationAnalysis(
-  materialText: string
-): Promise<RunPresentationAnalysisResult> {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
-  if (!apiKey?.trim()) {
-    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not configured")
-  }
+type PassResult = {
+  analysis: PresentationAnalysis
+  providerMetadata: ProviderMetadata | undefined
+  groundingSteps: GroundingStepSnapshot[]
+}
 
+async function executePresentationAnalysisPass(
+  userPrompt: string,
+  repairMaterialExcerpt: string
+): Promise<PassResult> {
   const modelId = getGeminiAnalysisModelId()
-  const body = truncateMaterial(materialText)
 
   const result = await generateText({
     model: google(modelId),
@@ -258,7 +318,7 @@ export async function runPresentationAnalysis(
       google_search: google.tools.googleSearch({}),
     },
     system: PRESENTATION_ANALYSIS_SYSTEM,
-    prompt: buildPresentationUserPrompt(body),
+    prompt: userPrompt,
   })
 
   const firstPass = tryParsePresentationFromGenerateResult(result)
@@ -279,7 +339,7 @@ export async function runPresentationAnalysis(
     model: google(modelId),
     stopWhen: stepCountIs(4),
     system: PRESENTATION_JSON_REPAIR_SYSTEM,
-    prompt: buildJsonRepairUserPrompt(body, salvage),
+    prompt: buildJsonRepairUserPrompt(repairMaterialExcerpt, salvage),
   })
 
   const secondPass = tryParsePresentationFromGenerateResult(repair)
@@ -292,4 +352,98 @@ export async function runPresentationAnalysis(
   }
 
   throwParseFailure(secondPass.lastError ?? firstPass.lastError)
+}
+
+function offsetGroundingSteps(
+  steps: GroundingStepSnapshot[],
+  baseStep: number
+): GroundingStepSnapshot[] {
+  return steps.map((s) => ({
+    ...s,
+    stepNumber: baseStep + s.stepNumber,
+  }))
+}
+
+/**
+ * Gemini + Google Search 그라운딩. (도구 + API JSON 모드는 Gemini에서 동시 미지원 → 텍스트 JSON 후 Zod 검증)
+ * 모델은 GEMINI_ANALYSIS_MODEL_ID 로 재정의 가능.
+ *
+ * 본문이 `getAnalysisModelMaxInputChars()` 이하면 1회 호출, 초과 시 겹침 구간 분할 후 순차 분석·이슈 병합.
+ */
+export async function runPresentationAnalysis(
+  materialText: string
+): Promise<RunPresentationAnalysisResult> {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
+  if (!apiKey?.trim()) {
+    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not configured")
+  }
+
+  const maxChars = getAnalysisModelMaxInputChars()
+  const fullLen = materialText.length
+
+  if (fullLen <= maxChars) {
+    const pass = await executePresentationAnalysisPass(
+      buildPresentationUserPrompt(materialText),
+      materialText
+    )
+    return {
+      ...pass,
+      materialMeta: {
+        charLengthOriginal: fullLen,
+        charLengthSentToModel: fullLen,
+        truncatedForModel: false,
+        maxChars,
+      },
+    }
+  }
+
+  const chunks = splitMaterialIntoChunks(
+    materialText,
+    maxChars,
+    CHUNK_OVERLAP_CHARS
+  )
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info(
+      `[analyze] 긴 문서: ${chunks.length}구간 순차 분석 (원문 ${fullLen.toLocaleString("ko-KR")}자, 구간당 최대 ${maxChars.toLocaleString("ko-KR")}자, 겹침 ${CHUNK_OVERLAP_CHARS.toLocaleString("ko-KR")}자)`
+    )
+  }
+
+  const mergedIssues: PresentationIssue[] = []
+  const mergedGrounding: GroundingStepSnapshot[] = []
+  let lastProvider: ProviderMetadata | undefined
+  let stepBase = 0
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!
+    const userPrompt = buildChunkedPresentationUserPrompt(
+      chunk,
+      i + 1,
+      chunks.length
+    )
+    const pass = await executePresentationAnalysisPass(userPrompt, chunk)
+    mergedIssues.push(...pass.analysis.issues)
+    mergedGrounding.push(
+      ...offsetGroundingSteps(pass.groundingSteps, stepBase)
+    )
+    stepBase += 10_000
+    lastProvider = pass.providerMetadata ?? lastProvider
+  }
+
+  const deduped = dedupeMergedIssues(mergedIssues)
+  const charsSentTotal = chunks.reduce((sum, c) => sum + c.length, 0)
+
+  return {
+    analysis: { issues: deduped },
+    providerMetadata: lastProvider,
+    groundingSteps: mergedGrounding,
+    materialMeta: {
+      charLengthOriginal: fullLen,
+      charLengthSentToModel: charsSentTotal,
+      truncatedForModel: false,
+      maxChars,
+      usedChunkedAnalysis: true,
+      chunkCount: chunks.length,
+    },
+  }
 }

@@ -1,12 +1,22 @@
 import {
+  materialMetaSchema,
   presentationAnalysisSchema,
+  type AnalysisMaterialMeta,
   type PresentationAnalysis,
 } from "@/lib/ai/schema"
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
 
 export async function analyzePresentationText(
   text: string
 ): Promise<
-  | { ok: true; data: PresentationAnalysis }
+  | {
+      ok: true
+      data: PresentationAnalysis
+      materialMeta: AnalysisMaterialMeta | undefined
+    }
   | { ok: false; message: string }
 > {
   const res = await fetch("/api/analyze", {
@@ -41,10 +51,14 @@ export async function analyzePresentationText(
     return { ok: false, message: base + retry }
   }
 
-  const parsed = presentationAnalysisSchema.safeParse(raw)
+  const obj = isRecord(raw) ? raw : {}
+  const parsed = presentationAnalysisSchema.safeParse({ issues: obj.issues })
   if (!parsed.success) {
     return { ok: false, message: "분석 응답 형식이 올바르지 않습니다." }
   }
 
-  return { ok: true, data: parsed.data }
+  const metaParsed = materialMetaSchema.safeParse(obj.materialMeta)
+  const materialMeta = metaParsed.success ? metaParsed.data : undefined
+
+  return { ok: true, data: parsed.data, materialMeta }
 }

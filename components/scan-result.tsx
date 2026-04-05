@@ -176,7 +176,7 @@ function generateMarkdownSummary(result: ScanResultType): string {
   result.flaws.forEach((flaw, index) => {
     md += `### ${index + 1}. [${flaw.tag}] ${flaw.originalText.slice(0, 80)}${flaw.originalText.length > 80 ? "…" : ""}\n`
     md += `- 이유: ${flaw.reason}\n`
-    md += `- 개선 질문: ${flaw.improvementQuestion}\n`
+    md += `- 개선 방향: ${flaw.improvementQuestion}\n`
     flaw.evidence.forEach((ev, j) => {
       md += `  - 근거 ${j + 1}: ${ev.title} (${ev.stance})${ev.url ? ` — ${ev.url}` : ""}\n`
       md += `    ${ev.snippet}\n`

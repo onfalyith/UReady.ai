@@ -1,13 +1,22 @@
 import { z } from "zod"
 
-/** evidence.stance — 허용 값만 */
+/** evidence.stance — 모델 출력(한국어) + 레거시 영문 호환 */
 export const evidenceStanceSchema = z.enum([
-  "supports",
-  "contradicts",
-  "insufficient",
+  "근거 확인",
+  "근거 다름",
+  "근거 부족",
 ])
 
 export type EvidenceStance = z.infer<typeof evidenceStanceSchema>
+
+/** 이슈별 출처·근거 신뢰도(UI에서 한국어 안내로 매핑) */
+export const sourceReliabilitySchema = z.enum([
+  "pass",
+  "low_credibility",
+  "unverified",
+])
+
+export type SourceReliability = z.infer<typeof sourceReliabilitySchema>
 
 function pickString(
   row: Record<string, unknown>,
@@ -22,13 +31,37 @@ function pickString(
 }
 
 function normalizeStance(raw: unknown): EvidenceStance {
-  const t = typeof raw === "string" ? raw.toLowerCase().trim() : ""
-  if (t === "supports" || t === "support") return "supports"
-  if (t === "contradicts" || t === "contradict") return "contradicts"
+  const s = typeof raw === "string" ? raw.trim() : ""
+  if (s === "근거 확인") return "근거 확인"
+  if (s === "근거 다름" || s === "근거다름") return "근거 다름"
+  if (s === "근거 부족" || s === "근거부족") return "근거 부족"
+  const t = s.toLowerCase()
+  if (t === "supports" || t === "support") return "근거 확인"
+  if (t === "contradicts" || t === "contradict") return "근거 다름"
   if (t === "insufficient" || t === "insufficient_evidence") {
-    return "insufficient"
+    return "근거 부족"
   }
-  return "insufficient"
+  return "근거 부족"
+}
+
+function normalizeSourceReliability(raw: unknown): SourceReliability {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : ""
+  if (s === "pass" || s === "ok" || s === "패스") return "pass"
+  if (
+    s === "low_credibility" ||
+    s === "lowcredibility" ||
+    s.includes("신뢰도가 낮")
+  ) {
+    return "low_credibility"
+  }
+  if (
+    s === "unverified" ||
+    s === "미확인" ||
+    s.includes("확인되지 않")
+  ) {
+    return "unverified"
+  }
+  return "pass"
 }
 
 function coerceValidUrl(raw: unknown): string {
@@ -101,6 +134,7 @@ const presentationIssueStrictSchema = z.object({
   logicalWeakness: z.string(),
   counterArgument: z.string(),
   improvementQuestion: z.string(),
+  sourceReliability: sourceReliabilitySchema,
   evidence: z.array(presentationEvidenceStrictSchema).min(1),
 })
 
@@ -121,6 +155,8 @@ export const presentationIssueSchema = z
     counter_argument: z.string().optional(),
     improvementQuestion: z.string().optional(),
     improvement_question: z.string().optional(),
+    sourceReliability: z.string().optional(),
+    source_reliability: z.string().optional(),
     evidence: z.array(z.unknown()).optional(),
   })
   .passthrough()
@@ -155,9 +191,13 @@ export const presentationIssueSchema = z
               title: "근거 없음",
               url: "https://example.com",
               snippet: "모델이 evidence를 비우거나 파싱하지 못했습니다.",
-              stance: "insufficient",
+              stance: "근거 부족",
             },
           ]
+
+    const sourceReliability = normalizeSourceReliability(
+      row.sourceReliability ?? row.source_reliability
+    )
 
     return {
       location: pickString(row, ["location", "Location"], "—"),
@@ -177,6 +217,7 @@ export const presentationIssueSchema = z
         ["improvementQuestion", "improvement_question"],
         "—"
       ),
+      sourceReliability,
       evidence: filledEvidence,
     }
   })
@@ -187,6 +228,18 @@ const presentationAnalysisStrictSchema = z.object({
 })
 
 export type PresentationAnalysis = z.infer<typeof presentationAnalysisStrictSchema>
+
+/** `/api/analyze` 응답 — 모델 입력 길이(잘림)·구간 분할 메타 */
+export const materialMetaSchema = z.object({
+  charLengthOriginal: z.number().int().nonnegative(),
+  charLengthSentToModel: z.number().int().nonnegative(),
+  truncatedForModel: z.boolean(),
+  maxChars: z.number().int().positive(),
+  usedChunkedAnalysis: z.boolean().optional(),
+  chunkCount: z.number().int().positive().optional(),
+})
+
+export type AnalysisMaterialMeta = z.infer<typeof materialMetaSchema>
 
 /** 루트가 배열이면 issues 로 감쌈 (모델이 [이슈…] 만 반환하는 경우) */
 function normalizeAnalysisRoot(val: unknown): unknown {

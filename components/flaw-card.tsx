@@ -15,9 +15,22 @@ import {
 import type { Flaw } from "@/lib/types"
 import html2canvas from "html2canvas"
 
+function sourceTrustNoticeFlaw(level: Flaw["sourceReliability"]): string | null {
+  if (level === "low_credibility") {
+    return "(근거 자료 출처의 신뢰도가 낮습니다)"
+  }
+  if (level === "unverified") {
+    return "(근거 자료의 출처가 확인되지 않습니다)"
+  }
+  return null
+}
+
 function stanceLabel(stance: string) {
-  if (stance === "supports") return "지지"
-  if (stance === "contradicts") return "반박"
+  if (stance === "근거 확인") return "근거 확인"
+  if (stance === "근거 다름") return "근거 다름"
+  if (stance === "근거 부족") return "근거 부족"
+  if (stance === "supports") return "근거 확인"
+  if (stance === "contradicts") return "근거 다름"
   return "근거 부족"
 }
 
@@ -105,12 +118,18 @@ export function FlawCard({ flaw, index, isActive, onClick }: FlawCardProps) {
         <div className="bg-muted/50 rounded-lg p-3 mb-4">
           <h4 className="text-sm font-semibold mb-1.5 flex items-center gap-1.5 text-primary">
             <Lightbulb className="h-4 w-4" />
-            개선 방향 질문
+            개선 방향
           </h4>
           <p className="text-sm text-foreground leading-relaxed">
             {flaw.improvementQuestion}
           </p>
         </div>
+
+        {sourceTrustNoticeFlaw(flaw.sourceReliability) ? (
+          <p className="text-sm font-medium text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+            {sourceTrustNoticeFlaw(flaw.sourceReliability)}
+          </p>
+        ) : null}
 
         <div className="space-y-2">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">

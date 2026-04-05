@@ -6,4 +6,5 @@ export type {
   PresentationAnalysis,
   PresentationEvidence,
   PresentationIssue,
+  SourceReliability,
 } from "@/lib/ai/schema"

@@ -135,13 +135,14 @@ function parseFlawsFromFormattedOutput(
         question || "이 주장의 전제와 근거를 어떻게 다시 검증할 수 있을까요?",
       startIndex,
       endIndex,
+      sourceReliability: "pass",
       evidence: [
         {
           title: "Dify 워크플로 출력",
           url: "",
           snippet:
             "레거시 Dify 경로에서는 검색 그라운딩 근거가 별도로 수집되지 않습니다.",
-          stance: "insufficient",
+          stance: "근거 부족",
         },
       ],
     })
@@ -181,12 +182,13 @@ export function mapDifyWorkflowToScanResult(
       improvementQuestion: "이 결론이 성립하려면 어떤 근거가 추가로 필요할까요?",
       startIndex: 0,
       endIndex: Math.min(40, Math.max(1, originalContent.length)),
+      sourceReliability: "unverified",
       evidence: [
         {
           title: "분석 출력 없음",
           url: "",
           snippet: "워크플로 응답에서 구조화된 이슈를 만들지 못했습니다.",
-          stance: "insufficient",
+          stance: "근거 부족",
         },
       ],
     },

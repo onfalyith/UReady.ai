@@ -8,6 +8,7 @@ export function createInitialUReadyState(): UReadyAppState {
     sourceKind: "none",
     displayFilename: "분석 중...",
     analysisResult: null,
+    analysisMaterialMeta: null,
     analysisError: null,
     extractingDocument: false,
   }

@@ -6,12 +6,20 @@ export const issueTagSchema = z.enum(["논리적 취약점", "반론"])
 export type IssueTag = z.infer<typeof issueTagSchema>
 
 export const evidenceStanceSchema = z.enum([
-  "supports",
-  "contradicts",
-  "insufficient",
+  "근거 확인",
+  "근거 다름",
+  "근거 부족",
 ])
 
 export type EvidenceStance = z.infer<typeof evidenceStanceSchema>
+
+export const sourceReliabilitySchema = z.enum([
+  "pass",
+  "low_credibility",
+  "unverified",
+])
+
+export type SourceReliability = z.infer<typeof sourceReliabilitySchema>
 
 export const evidenceItemSchema = z.object({
   title: z.string(),
@@ -30,7 +38,8 @@ export const verificationIssueSchema = z.object({
   improvementQuestion: z.string(),
   startIndex: z.number().int().min(0),
   endIndex: z.number().int().min(0),
-  /** 반드시 1개 이상. 출처를 찾지 못한 경우 stance는 insufficient. */
+  sourceReliability: sourceReliabilitySchema.default("pass"),
+  /** 반드시 1개 이상. 출처를 찾지 못한 경우 stance는 "근거 부족". */
   evidence: z.array(evidenceItemSchema).min(1),
 })
 

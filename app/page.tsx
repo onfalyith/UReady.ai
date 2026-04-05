@@ -93,7 +93,7 @@ export default function Home() {
     const sig = countSignificantChars(state.draftText.trim())
     if (sig < MIN_ANALYSIS_SIGNIFICANT_CHARS) {
       window.alert(
-        `분석할 텍스트가 너무 짧습니다.\n공백 제외 ${MIN_ANALYSIS_SIGNIFICANT_CHARS}자 이상 입력한 뒤 다시 시도해 주세요. (현재 약 ${sig}자)`
+        "분석할 내용이 없습니다.\n공백이 아닌 글자를 1자 이상 입력하거나, PDF/TXT에서 텍스트를 불러온 뒤 다시 시도해 주세요."
       )
       return
     }
@@ -110,6 +110,7 @@ export default function Home() {
       displayFilename,
       analysisError: null,
       analysisResult: null,
+      analysisMaterialMeta: null,
     }))
   }, [state.draftText, state.selectedFile])
 
@@ -136,6 +137,7 @@ export default function Home() {
         ...s,
         screen: "result",
         analysisResult: res.data,
+        analysisMaterialMeta: res.materialMeta ?? null,
       }))
     })()
   }, [state.screen, state.draftText])
@@ -169,6 +171,7 @@ export default function Home() {
         <ResultScreen
           displayFilename={state.displayFilename}
           analysis={state.analysisResult}
+          materialMeta={state.analysisMaterialMeta}
           onReset={resetToUpload}
           onLogoClick={resetToUpload}
         />

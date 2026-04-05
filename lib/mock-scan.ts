@@ -29,7 +29,7 @@ function mockEvidence(): Flaw["evidence"] {
       title: "데모",
       url: "",
       snippet: "모의 데이터이며 실제 웹 검색 근거가 아닙니다.",
-      stance: "insufficient",
+      stance: "근거 부족",
     },
   ]
 }
@@ -65,6 +65,7 @@ function generateMockFlaws(content: string): Flaw[] {
       improvementQuestion: getWeaknessQuestion(i),
       startIndex,
       endIndex: startIndex + sentence.length,
+      sourceReliability: "pass",
       evidence: mockEvidence(),
     })
   }
@@ -90,6 +91,7 @@ function generateMockFlaws(content: string): Flaw[] {
       improvementQuestion: getCounterQuestion(i),
       startIndex,
       endIndex: startIndex + sentence.length,
+      sourceReliability: "pass",
       evidence: mockEvidence(),
     })
   }

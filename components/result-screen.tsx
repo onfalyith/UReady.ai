@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { SharedNav } from "@/components/uready/shared-nav"
 import { IssueCard } from "@/components/issue-card"
+import type { AnalysisMaterialMeta } from "@/lib/ai/schema"
 import type { PresentationAnalysis } from "@/types/analysis"
 
 function buildCopyText(data: PresentationAnalysis, displayFilename: string) {
@@ -18,7 +19,12 @@ function buildCopyText(data: PresentationAnalysis, displayFilename: string) {
     lines.push(`원문: ${issue.originalText}`)
     lines.push(`논리적 취약점: ${issue.logicalWeakness}`)
     lines.push(`반론: ${issue.counterArgument}`)
-    lines.push(`개선 질문: ${issue.improvementQuestion}`)
+    lines.push(`개선 방향: ${issue.improvementQuestion}`)
+    if (issue.sourceReliability === "low_credibility") {
+      lines.push("(근거 자료 출처의 신뢰도가 낮습니다)")
+    } else if (issue.sourceReliability === "unverified") {
+      lines.push("(근거 자료의 출처가 확인되지 않습니다)")
+    }
     issue.evidence.forEach((ev) => {
       lines.push(
         `  - [${ev.stance}] ${ev.title} | ${ev.url}\n    ${ev.snippet}`
@@ -35,6 +41,7 @@ function buildCopyText(data: PresentationAnalysis, displayFilename: string) {
 type ResultScreenProps = {
   displayFilename: string
   analysis: PresentationAnalysis
+  materialMeta: AnalysisMaterialMeta | null
   onReset: () => void
   onLogoClick: () => void
 }
@@ -42,6 +49,7 @@ type ResultScreenProps = {
 export function ResultScreen({
   displayFilename,
   analysis,
+  materialMeta,
   onReset,
   onLogoClick,
 }: ResultScreenProps) {
@@ -122,6 +130,52 @@ export function ResultScreen({
           </p>
         </header>
 
+        {materialMeta?.usedChunkedAnalysis &&
+        materialMeta.chunkCount != null ? (
+          <div
+            className="mb-6 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+            role="status"
+          >
+            <p className="m-0 font-semibold">긴 문서를 구간 나누어 분석했습니다</p>
+            <p className="mt-1.5 mb-0 leading-relaxed text-sky-900/90">
+              원문{" "}
+              <strong>
+                {materialMeta.charLengthOriginal.toLocaleString("ko-KR")}자
+              </strong>
+              를 한 번에 넣을 수 있는 한도(
+              <strong>
+                {materialMeta.maxChars.toLocaleString("ko-KR")}자
+              </strong>
+              )를 넘어,{" "}
+              <strong>{materialMeta.chunkCount}개</strong> 구간으로 나눠 순차
+              분석했습니다. 구간 경계 근처에서 비슷한 항목이 있으면 하나로
+              합쳐 표시될 수 있습니다. 소요 시간이 더 길어질 수 있습니다.
+            </p>
+          </div>
+        ) : null}
+
+        {materialMeta?.truncatedForModel ? (
+          <div
+            className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="m-0 font-semibold">본문이 분석 상한에서 잘렸습니다</p>
+            <p className="mt-1.5 mb-0 leading-relaxed text-amber-900/90">
+              모델에는 최대{" "}
+              <strong>{materialMeta.maxChars.toLocaleString("ko-KR")}자</strong>
+              까지 전달됩니다. 이번 원문은{" "}
+              <strong>
+                {materialMeta.charLengthOriginal.toLocaleString("ko-KR")}자
+              </strong>
+              이므로 앞{" "}
+              <strong>
+                {materialMeta.charLengthSentToModel.toLocaleString("ko-KR")}자
+              </strong>
+              만 반영되었습니다. PDF 뒷부분이 빠진 것처럼 보일 수 있습니다.
+            </p>
+          </div>
+        ) : null}
+
         {issues.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
             눈에 띄는 허점이 발견되지 않았어요.
@@ -138,20 +192,10 @@ export function ResultScreen({
           </ul>
         )}
 
-        <footer className="mt-12 rounded-[10px] border border-uready-gray-200 bg-uready-gray-50 p-5">
-          <div className="flex gap-2 text-xs leading-relaxed text-uready-gray-500">
-            <span className="shrink-0 text-uready-amber" aria-hidden>
-              ⚠️
-            </span>
-            <span>
-              AI의 검증 결과는 완벽하지 않을 수 있으며, 부정확한 정보가 포함될 수
-              있습니다.
-            </span>
-          </div>
-          <p className="mt-3 flex items-center gap-1 text-xs font-semibold text-uready-red">
-            💾 새로고침 시 데이터가 삭제되며 메인 화면으로 이동합니다.
-          </p>
-        </footer>
+        <p className="mt-12 text-xs font-semibold leading-relaxed text-primary sm:text-sm">
+          💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
+          결과를 저장해두세요.
+        </p>
       </div>
 
       <div

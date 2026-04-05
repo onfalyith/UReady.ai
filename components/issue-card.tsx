@@ -3,12 +3,26 @@
 import type { PresentationIssue } from "@/types/analysis"
 import { EvidenceList } from "@/components/evidence-list"
 
+function sourceTrustNotice(
+  level: PresentationIssue["sourceReliability"]
+): string | null {
+  if (level === "low_credibility") {
+    return "(근거 자료 출처의 신뢰도가 낮습니다)"
+  }
+  if (level === "unverified") {
+    return "(근거 자료의 출처가 확인되지 않습니다)"
+  }
+  return null
+}
+
 type IssueCardProps = {
   issue: PresentationIssue
   index: number
 }
 
 export function IssueCard({ issue, index }: IssueCardProps) {
+  const trustNotice = sourceTrustNotice(issue.sourceReliability)
+
   return (
     <li className="overflow-hidden rounded-2xl border border-uready-gray-200 bg-white shadow-uready-sm">
       <div className="border-b border-uready-gray-100 px-[22px] py-3.5">
@@ -62,12 +76,23 @@ export function IssueCard({ issue, index }: IssueCardProps) {
 
         <section className="mb-5">
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            개선 질문
+            개선 방향
           </h3>
           <div className="rounded-[10px] border border-primary/25 bg-uready-red-light px-4 py-3.5 text-sm font-medium leading-relaxed text-uready-gray-900">
             {issue.improvementQuestion}
           </div>
         </section>
+
+        {trustNotice ? (
+          <>
+            <div className="my-4 h-px bg-uready-gray-100" />
+            <section className="mb-5">
+              <p className="rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium leading-relaxed text-amber-950">
+                {trustNotice}
+              </p>
+            </section>
+          </>
+        ) : null}
 
         <div className="my-4 h-px bg-uready-gray-100" />
 

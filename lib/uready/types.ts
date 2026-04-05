@@ -9,6 +9,7 @@
  * - `analysisError`: 분석 API 실패 메시지 (없으면 null)
  */
 
+import type { AnalysisMaterialMeta } from "@/lib/ai/schema"
 import type { PresentationAnalysis } from "@/types/analysis"
 
 /** 단일 페이지 내 3화면 전환 */
@@ -40,6 +41,8 @@ export type UReadyAppState = {
   displayFilename: string
   /** 분석 API 성공 시에만 설정 */
   analysisResult: PresentationAnalysis | null
+  /** 모델 입력 길이·잘림 여부(응답에 포함될 때만) */
+  analysisMaterialMeta: AnalysisMaterialMeta | null
   /** 분석 API 실패 시 업로드 화면 등에 표시 */
   analysisError: string | null
   /** PDF 서버 추출 중 (업로드 화면) */
