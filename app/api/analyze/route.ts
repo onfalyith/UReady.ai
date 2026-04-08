@@ -17,6 +17,8 @@ import {
 } from "@/lib/uready/analysis-limits"
 
 export const runtime = "nodejs"
+/** Vercel: Pro에서 최대 300s까지. Hobby는 플랫폼 상한 10s라 긴 분석은 502가 날 수 있음. */
+export const maxDuration = 300
 
 const MAX_TEXT_CHARS = 500_000
 
@@ -115,7 +117,7 @@ export async function POST(request: Request) {
     const quotaLike =
       /quota|exceeded|rate.?limit|429|resource_exhausted/i.test(raw)
 
-    const status = missingKey ? 503 : 502
+    const status = missingKey ? 503 : 500
     let error = missingKey
       ? "Gemini API 키가 없습니다. 프로젝트 루트의 .env.local 파일에 GOOGLE_GENERATIVE_AI_API_KEY=발급받은키 를 넣고, 개발 서버(npm run dev)를 한 번 재시작한 뒤 다시 시도해 주세요."
       : raw

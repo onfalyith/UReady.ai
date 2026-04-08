@@ -12,6 +12,8 @@ import {
 import { isPdfJsExtractionLowQuality } from "@/lib/pdf/extraction-heuristic"
 
 export const runtime = "nodejs"
+/** Unstructured 등 느린 추출 대비 — Hobby는 여전히 10s 상한. */
+export const maxDuration = 300
 
 /** 클라이언트가 4MB 초과 PDF는 보내지 않음(Vercel 요청 본문 ~4.5MB 한도). */
 const MAX_BYTES = 15 * 1024 * 1024
