@@ -10,23 +10,20 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { PDFJS_BROWSER_WORKER_URL } from "@/lib/api/extract-pdf-client"
+import { pageTextFromContent } from "@/lib/client/pdf-page-text"
 import { findPageIndexForIssueQuote } from "@/lib/uready/build-source-segments"
 import type { PresentationIssue } from "@/types/analysis"
 import type { SourceTextPanelHandle } from "@/components/source-text-panel"
 
-function pageTextFromContent(
-  items: Array<{ str?: string } & Record<string, unknown>>
-): string {
-  const parts = items
-    .map((item) => {
-      if (item && typeof item === "object" && "str" in item) {
-        return String((item as { str: string }).str)
-      }
-      return ""
-    })
-    .filter(Boolean)
-  return parts.join(" ").trim()
-}
+/** 패널 미리보기: 한 페이지가 차지하는 CSS 최대 너비(px) */
+const PDF_PANEL_MAX_CSS_WIDTH = 560
+/**
+ * pdf.js viewport 배율 상한(포인트→CSS px 근사).
+ * 올리면 더 선명하지만 메모리·렌더 비용이 늘어납니다.
+ */
+const PDF_PANEL_MAX_PAGE_SCALE = 3
+/** 라이트박스: 화면에 맞출 때의 기본 배율 상한(창보다 큰 PDF는 여기까지) */
+const PDF_LIGHTBOX_MAX_FIT_SCALE = 4
 
 /** pdf.js getDocument().promise — 타입 추론용 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -254,8 +251,13 @@ function PdfPageLightbox({
         const pad = 24
         const maxW = window.innerWidth - pad * 2
         const maxH = window.innerHeight - navTop - pad * 2
-        const scale = Math.min(maxW / base.width, maxH / base.height, 3)
-        const viewport = page.getViewport({ scale })
+        const fitScale = Math.min(
+          maxW / base.width,
+          maxH / base.height,
+          PDF_LIGHTBOX_MAX_FIT_SCALE
+        )
+        const dpr = window.devicePixelRatio || 1
+        const viewport = page.getViewport({ scale: fitScale * dpr })
 
         const canvas = canvasRef.current
         if (!canvas || cancelled) return
@@ -268,6 +270,8 @@ function PdfPageLightbox({
 
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
+        canvas.style.width = `${Math.floor(viewport.width / dpr)}px`
+        canvas.style.height = `${Math.floor(viewport.height / dpr)}px`
 
         await page.render({ canvasContext: ctx, viewport }).promise
       } catch (e) {
@@ -337,9 +341,13 @@ function PdfPageCanvas({
       try {
         const page = await pdf.getPage(pageNumber)
         const base = page.getViewport({ scale: 1 })
-        const maxCssWidth = 560
-        const scale = Math.min(2.25, maxCssWidth / base.width)
-        const viewport = page.getViewport({ scale })
+        const fitScale = Math.min(
+          PDF_PANEL_MAX_PAGE_SCALE,
+          PDF_PANEL_MAX_CSS_WIDTH / base.width
+        )
+        const dpr =
+          typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+        const viewport = page.getViewport({ scale: fitScale * dpr })
 
         const canvas = canvasRef.current
         if (!canvas || cancelled) return
@@ -352,6 +360,8 @@ function PdfPageCanvas({
 
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
+        canvas.style.width = `${Math.floor(viewport.width / dpr)}px`
+        canvas.style.height = `${Math.floor(viewport.height / dpr)}px`
 
         await page.render({ canvasContext: ctx, viewport }).promise
       } catch (e) {

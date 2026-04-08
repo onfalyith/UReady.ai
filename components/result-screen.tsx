@@ -9,6 +9,7 @@ import {
   type SourceTextPanelHandle,
 } from "@/components/source-text-panel"
 import type { AnalysisMaterialMeta } from "@/lib/ai/schema"
+import { extractPdfPageTextsArray } from "@/lib/client/pdf-page-text"
 import {
   assignIssueToScriptOrMaterial,
   findPdfPage1BasedForIssue,
@@ -223,12 +224,43 @@ export function ResultScreen({
     if (!pdfFile && !materialPdfFile) setPdfViewMode("text")
   }, [pdfFile, materialPdfFile])
 
+  /** PdfPagesPanel이 마운트되지 않았거나(추출 텍스트만 보기) 빨리 언마운트돼도 (p.n) 계산 가능하도록 */
   useEffect(() => {
+    if (!pdfFile) {
+      setMainPdfPageTexts(null)
+      return
+    }
     setMainPdfPageTexts(null)
+    let cancelled = false
+    void extractPdfPageTextsArray(pdfFile)
+      .then((texts) => {
+        if (!cancelled && texts.length > 0) setMainPdfPageTexts(texts)
+      })
+      .catch(() => {
+        if (!cancelled) setMainPdfPageTexts(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [pdfFile])
 
   useEffect(() => {
+    if (!materialPdfFile) {
+      setMaterialPdfPageTexts(null)
+      return
+    }
     setMaterialPdfPageTexts(null)
+    let cancelled = false
+    void extractPdfPageTextsArray(materialPdfFile)
+      .then((texts) => {
+        if (!cancelled && texts.length > 0) setMaterialPdfPageTexts(texts)
+      })
+      .catch(() => {
+        if (!cancelled) setMaterialPdfPageTexts(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [materialPdfFile])
 
   const resolvedPdfPagesForIssues = useMemo(() => {
