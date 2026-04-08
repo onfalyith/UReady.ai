@@ -31,8 +31,20 @@ const THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const
 export type GeminiThinkingLevel = (typeof THINKING_LEVELS)[number]
 
 /**
+ * `thinkingConfig`(thinkingLevel)는 Flash·Lite 등 일부 모델에서 미지원이며,
+ * 보내면 API가 "Thinking level is not supported for this model" 로 실패한다.
+ */
+export function geminiModelSupportsThinkingLevel(modelId: string): boolean {
+  const id = normalizeGeminiModelId(modelId).toLowerCase()
+  if (id.includes("flash")) return false
+  if (id.includes("lite")) return false
+  return true
+}
+
+/**
  * Gemini 3 계열 사고(Thinking) 모드 — @ai-sdk/google `providerOptions.google.thinkingConfig`.
  * 끄려면 `GEMINI_THINKING=false` (또는 `0`). 단계는 `GEMINI_THINKING_LEVEL` (기본 high).
+ * Flash/Lite 모델이면 env와 무관하게 전송하지 않음(위 미지원 오류 방지).
  */
 export function getGeminiAnalysisProviderOptions():
   | { google: { thinkingConfig: { thinkingLevel: GeminiThinkingLevel } } }
@@ -41,6 +53,10 @@ export function getGeminiAnalysisProviderOptions():
     process.env.GEMINI_THINKING === "false" ||
     process.env.GEMINI_THINKING === "0"
   if (off) return undefined
+
+  if (!geminiModelSupportsThinkingLevel(getGeminiAnalysisModelId())) {
+    return undefined
+  }
 
   const raw = process.env.GEMINI_THINKING_LEVEL?.trim().toLowerCase()
   const thinkingLevel: GeminiThinkingLevel = THINKING_LEVELS.includes(
