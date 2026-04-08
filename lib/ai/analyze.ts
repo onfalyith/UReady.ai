@@ -32,7 +32,16 @@ import {
   PRESENTATION_JSON_REPAIR_SYSTEM,
   PRESENTATION_JSON_SYNTHESIS_SYSTEM,
 } from "@/lib/ai/prompt"
-import { getGeminiAnalysisModelId } from "@/lib/ai/gemini-model"
+import {
+  getGeminiAnalysisModelId,
+  getGeminiAnalysisProviderOptions,
+} from "@/lib/ai/gemini-model"
+
+/** @ai-sdk/google 사고(Thinking) 설정 — generateText / generateObject 공통 */
+function geminiAnalysisExtras() {
+  const o = getGeminiAnalysisProviderOptions()
+  return o ? { providerOptions: o } : {}
+}
 
 /**
  * 기본 한도(한 번에 모델에 넣는 본문 글자 수 상한).
@@ -618,11 +627,14 @@ type PresentationPassOptions = {
   totalChunks?: number
   /** 사용자가 선택 입력한 발표 주제·강조점 — 프롬프트에만 반영 */
   userFocusNotes?: string | null
+  /** 발표 대본 + 발표 자료 동시 제출 — 통합 맥락·교차 검토 프롬프트 */
+  dualSourceMode?: boolean
 }
 
 /** `runPresentationAnalysis` 선택 옵션 */
 export type RunPresentationAnalysisOptions = {
   userFocusNotes?: string
+  dualSourceMode?: boolean
 }
 
 async function maybePolicyPreprocessMaterial(
@@ -644,6 +656,7 @@ async function maybePolicyPreprocessMaterial(
   }
   try {
     const r = await generateText({
+      ...geminiAnalysisExtras(),
       model: google(modelId),
       stopWhen: stepCountIs(1),
       system: POLICY_PREPROCESS_SYSTEM,
@@ -672,20 +685,26 @@ async function maybePolicyPreprocessMaterial(
 async function runSearchGroundingPhase(
   modelId: string,
   material: string,
-  userFocusNotes?: string | null
+  userFocusNotes?: string | null,
+  dualSourceMode?: boolean
 ) {
   const maxSearchSteps = getSearchPhaseMaxSteps()
   const maxQueries = getMaxSearchToolCalls()
   const searchMaterial = material.slice(0, SEARCH_PHASE_MATERIAL_MAX_CHARS)
 
   const result = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(maxSearchSteps),
     tools: {
       google_search: google.tools.googleSearch({}),
     },
     system: buildSearchPhaseSystemPrompt(maxQueries),
-    prompt: buildSearchPhaseUserPrompt(searchMaterial, userFocusNotes),
+    prompt: buildSearchPhaseUserPrompt(
+      searchMaterial,
+      userFocusNotes,
+      dualSourceMode
+    ),
     prepareStep: ({ steps }) => {
       const used = countToolCallsInSteps(steps)
       if (used >= maxQueries) {
@@ -734,6 +753,7 @@ async function finalizeSearchNotesWithFollowUp(
       finishReason: searchResult.finishReason,
     })
     const r = await generateText({
+      ...geminiAnalysisExtras(),
       model: google(modelId),
       messages: [
         ...(msgs as ModelMessage[]),
@@ -858,7 +878,8 @@ async function runJsonSynthesisPhase(
   material: string,
   searchNotes: string,
   chunkHeader: string | null,
-  userFocusNotes?: string | null
+  userFocusNotes?: string | null,
+  dualSourceMode?: boolean
 ): Promise<{
   analysis: PresentationAnalysis
   providerMetadata: ProviderMetadata | undefined
@@ -867,10 +888,12 @@ async function runJsonSynthesisPhase(
     material,
     searchNotes,
     chunkHeader,
-    userFocusNotes
+    userFocusNotes,
+    dualSourceMode
   )
   try {
     const structured = await generateObject({
+      ...geminiAnalysisExtras(),
       model: google(modelId),
       schema: presentationAnalysisStrictSchema,
       schemaName: "PresentationAnalysis",
@@ -894,6 +917,7 @@ async function runJsonSynthesisPhase(
   }
 
   const plain = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(2),
     temperature: JSON_SYNTHESIS_TEMPERATURE,
@@ -913,6 +937,7 @@ async function runJsonSynthesisPhase(
 
   const salvage = collectAnalysisTextCandidates(plain).join("\n\n---\n\n")
   const repair = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(4),
     temperature: JSON_SYNTHESIS_TEMPERATURE,
@@ -935,6 +960,7 @@ async function executeSplitPresentationPass(
   material: string,
   opts?: PresentationPassOptions
 ): Promise<PassResult> {
+  const dual = opts?.dualSourceMode === true
   const chunkHeader =
     opts?.chunkIndex1Based != null &&
     opts?.totalChunks != null &&
@@ -955,7 +981,8 @@ async function executeSplitPresentationPass(
     const searchResult = await runSearchGroundingPhase(
       modelId,
       material,
-      opts?.userFocusNotes
+      opts?.userFocusNotes,
+      dual
     )
     groundingSteps = collectGroundingSteps(searchResult.steps)
     searchMeta = searchResult.providerMetadata
@@ -979,7 +1006,8 @@ async function executeSplitPresentationPass(
       material,
       searchNotes,
       chunkHeader,
-      opts?.userFocusNotes
+      opts?.userFocusNotes,
+      dual
     )
     return {
       analysis: synthesis.analysis,
@@ -992,7 +1020,8 @@ async function executeSplitPresentationPass(
       modelId,
       material,
       groundingSteps,
-      opts?.userFocusNotes
+      opts?.userFocusNotes,
+      dual
     )
     if (recovered) {
       logAnalysisDiag("split_pass_fell_back_no_tool", {
@@ -1011,19 +1040,25 @@ async function tryNoToolFallbackPass(
   modelId: string,
   materialExcerpt: string,
   primaryGroundingSteps: GroundingStepSnapshot[],
-  userFocusNotes?: string | null
+  userFocusNotes?: string | null,
+  dualSourceMode?: boolean
 ): Promise<PassResult | null> {
   if (isNoToolFallbackDisabled()) return null
 
   try {
     const structured = await generateObject({
+      ...geminiAnalysisExtras(),
       model: google(modelId),
       schema: presentationAnalysisStrictSchema,
       schemaName: "PresentationAnalysis",
       schemaDescription:
         "발표 자료에서 찾은 허점 목록. 각 이슈에 categoryCheck(Whitelist 근거). location은 짧은 위치만, originalText는 자료에서 문자 그대로 복사한 인용.",
       system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
-      prompt: buildNoToolFallbackUserPrompt(materialExcerpt, userFocusNotes),
+      prompt: buildNoToolFallbackUserPrompt(
+        materialExcerpt,
+        userFocusNotes,
+        dualSourceMode
+      ),
     })
     const normalized = presentationAnalysisSchema.parse(structured.object)
     if (normalized.issues.length > 0) {
@@ -1047,10 +1082,15 @@ async function tryNoToolFallbackPass(
   }
 
   const fb = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(2),
     system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
-    prompt: buildNoToolFallbackUserPrompt(materialExcerpt, userFocusNotes),
+    prompt: buildNoToolFallbackUserPrompt(
+      materialExcerpt,
+      userFocusNotes,
+      dualSourceMode
+    ),
   })
 
   const direct = tryParsePresentationFromGenerateResult(fb)
@@ -1070,6 +1110,7 @@ async function tryNoToolFallbackPass(
   if (!fbSalvage.trim() && !fb.text?.trim()) return null
 
   const repair = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(4),
     system: PRESENTATION_JSON_REPAIR_SYSTEM,
@@ -1098,6 +1139,7 @@ async function executeMonolithicPresentationPass(
 
   const runPrimaryGenerate = () =>
     generateText({
+      ...geminiAnalysisExtras(),
       model: google(modelId),
       stopWhen: stepCountIs(maxSteps),
       tools: {
@@ -1136,6 +1178,7 @@ async function executeMonolithicPresentationPass(
           finishReason: result.finishReason,
         })
         const cont = await generateText({
+          ...geminiAnalysisExtras(),
           model: google(modelId),
           messages: [
             ...(msgs as ModelMessage[]),
@@ -1210,13 +1253,15 @@ ${repairMaterialExcerpt.slice(0, 28_000)}
       modelId,
       repairMaterialExcerpt,
       primaryGrounding,
-      passOpts?.userFocusNotes
+      passOpts?.userFocusNotes,
+      passOpts?.dualSourceMode
     )
     if (recovered) return recovered
     throw new Error("모델이 비어 있는 응답을 반환했습니다. 잠시 후 다시 시도해 주세요.")
   }
 
   const repair = await generateText({
+    ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(4),
     system: PRESENTATION_JSON_REPAIR_SYSTEM,
@@ -1289,15 +1334,19 @@ export async function runPresentationAnalysis(
   const maxChars = getAnalysisModelMaxInputChars()
   const fullLen = text.length
 
-  const focusOpts: PresentationPassOptions | undefined = userFocus
-    ? { userFocusNotes: userFocus }
-    : undefined
+  const dualMode = options?.dualSourceMode === true
+  const focusOpts: PresentationPassOptions | undefined = {
+    ...(userFocus ? { userFocusNotes: userFocus } : {}),
+    ...(dualMode ? { dualSourceMode: true } : {}),
+  }
+  const passOptsBase =
+    Object.keys(focusOpts).length > 0 ? focusOpts : undefined
 
   if (fullLen <= maxChars) {
     const pass = await executePresentationAnalysisPass(
-      buildPresentationUserPrompt(text, userFocus),
+      buildPresentationUserPrompt(text, userFocus, dualMode),
       text,
-      focusOpts
+      passOptsBase
     )
     return {
       ...pass,
@@ -1334,12 +1383,14 @@ export async function runPresentationAnalysis(
       chunk,
       i + 1,
       chunks.length,
-      userFocus
+      userFocus,
+      dualMode
     )
     const passOpts: PresentationPassOptions = {
       chunkIndex1Based: i + 1,
       totalChunks: chunks.length,
       ...(userFocus ? { userFocusNotes: userFocus } : {}),
+      ...(dualMode ? { dualSourceMode: true } : {}),
       ...(sharedSearchMode && i > 0 && sharedSearchNotes != null
         ? { sharedSearchNotes }
         : {}),

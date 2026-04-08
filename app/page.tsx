@@ -6,7 +6,10 @@ import { LoadingScreen } from "@/components/uready/loading-screen"
 import { ResultScreen } from "@/components/result-screen"
 import {
   createInitialUReadyState,
+  getAnalysisText,
   getDisplayFilename,
+  hasDualSourceFields,
+  isDualSourceInput,
   resolveSourceKind,
 } from "@/lib/uready/state"
 import type { UReadyAppState } from "@/lib/uready/types"
@@ -48,7 +51,8 @@ export default function Home() {
         const text = await readTextFileWithFileReader(file)
         setState((s) => ({
           ...s,
-          draftText: text,
+          documentText: text,
+          textareaDraft: "",
           selectedFile: file,
         }))
       } catch {
@@ -69,7 +73,9 @@ export default function Home() {
       setState((s) => ({
         ...s,
         extractingDocument: false,
-        ...(result.success ? { draftText: result.text } : {}),
+        ...(result.success
+          ? { documentText: result.text, textareaDraft: "" }
+          : { documentText: "" }),
       }))
       if (!result.success) {
         window.alert(result.error)
@@ -78,13 +84,14 @@ export default function Home() {
   }, [])
 
   const startAnalysis = useCallback(() => {
-    const kind = resolveSourceKind(state.draftText, state.selectedFile)
+    const payload = getAnalysisText(state)
+    const kind = resolveSourceKind(payload, state.selectedFile)
     if (kind === "none") {
       window.alert("발표 대본을 입력하거나 PDF 파일을 업로드해주세요.")
       return
     }
 
-    const sig = countSignificantChars(state.draftText.trim())
+    const sig = countSignificantChars(payload.trim())
     if (sig < MIN_ANALYSIS_SIGNIFICANT_CHARS) {
       window.alert(
         "분석할 내용이 없습니다.\n공백이 아닌 글자를 1자 이상 입력하거나, PDF/TXT에서 텍스트를 불러온 뒤 다시 시도해 주세요."
@@ -93,7 +100,7 @@ export default function Home() {
     }
 
     const displayFilename = getDisplayFilename(
-      state.draftText,
+      state.textareaDraft,
       state.selectedFile
     )
 
@@ -106,16 +113,19 @@ export default function Home() {
       analysisResult: null,
       analysisMaterialMeta: null,
     }))
-  }, [state.draftText, state.selectedFile])
+  }, [state.selectedFile, state.documentText, state.textareaDraft])
 
   useEffect(() => {
     if (state.screen !== "loading") return
 
     const id = ++analyzeRequestId.current
-    const text = state.draftText
+    const text = getAnalysisText(state)
 
     void (async () => {
-      const res = await analyzePresentationText(text)
+      const dual = isDualSourceInput(state)
+      const res = await analyzePresentationText(text, {
+        dualSourceMode: dual,
+      })
       if (analyzeRequestId.current !== id) return
 
       if (!res.ok) {
@@ -134,18 +144,24 @@ export default function Home() {
         analysisMaterialMeta: res.materialMeta ?? null,
       }))
     })()
-  }, [state.screen, state.draftText])
+  }, [
+    state.screen,
+    state.selectedFile,
+    state.documentText,
+    state.textareaDraft,
+  ])
 
   return (
     <>
       {state.screen === "upload" && (
         <UploadScreen
-          draftText={state.draftText}
+          textareaDraft={state.textareaDraft}
+          selectedFile={state.selectedFile}
           extractingDocument={state.extractingDocument}
           analysisError={state.analysisError}
           onDismissAnalysisError={dismissAnalysisError}
-          onDraftTextChange={(draftText) =>
-            setState((s) => ({ ...s, draftText }))
+          onTextareaChange={(textareaDraft) =>
+            setState((s) => ({ ...s, textareaDraft }))
           }
           onDocumentFile={handleDocumentFile}
           onStart={startAnalysis}
@@ -163,7 +179,33 @@ export default function Home() {
       {state.screen === "result" && state.analysisResult ? (
         <ResultScreen
           displayFilename={state.displayFilename}
-          sourceText={state.draftText}
+          sourceText={getAnalysisText(state)}
+          pdfFile={
+            hasDualSourceFields(state)
+              ? null
+              : state.sourceKind === "pdf"
+                ? state.selectedFile
+                : null
+          }
+          dualSourceMode={hasDualSourceFields(state)}
+          scriptText={
+            hasDualSourceFields(state) ? state.textareaDraft : undefined
+          }
+          materialText={
+            hasDualSourceFields(state) ? state.documentText : undefined
+          }
+          materialFilename={
+            hasDualSourceFields(state) && state.selectedFile
+              ? state.selectedFile.name
+              : undefined
+          }
+          materialPdfFile={
+            hasDualSourceFields(state) &&
+            state.selectedFile &&
+            isPdfFile(state.selectedFile)
+              ? state.selectedFile
+              : null
+          }
           analysis={state.analysisResult}
           materialMeta={state.analysisMaterialMeta}
           onReset={resetToUpload}

@@ -93,7 +93,7 @@ UReady.ai는 이 문제를 해결하기 위해
 - **UI**: Tailwind CSS
 - **LLM SDK**: Vercel AI SDK
 - **Schema Validation**: Zod
-- **Model**: 기본 `gemini-2.5-flash` (`GEMINI_ANALYSIS_MODEL_ID`로 Google AI에서 제공하는 다른 `gemini-…` 모델로 변경 가능)
+- **Model**: 기본 `gemini-3.1-pro-preview` (Search grounding + Thinking; `GEMINI_ANALYSIS_MODEL_ID`로 다른 `gemini-…` 지정 가능)
 - **Search Verification**: Gemini Grounding with Google Search
 - **PDF Extraction**: pdf.js
 - **Fallback Extraction**: Unstructured
@@ -257,7 +257,7 @@ pgvector는 추후 유사 문장 검색과 근거 재매칭을 고려한 확장 
 아래 조건을 만족해야 구현 완료로 봅니다.
 
 - PDF는 pdf.js 우선, 필요 시 Unstructured fallback 구조를 가진다.
-- `/api/analyze`는 Gemini와 Google Search grounding을 실제로 사용한다 (기본 모델은 `gemini-2.5-flash`, `GEMINI_ANALYSIS_MODEL_ID`로 변경 가능).
+- `/api/analyze`는 Gemini와 Google Search grounding을 실제로 사용한다 (기본 모델은 `gemini-3.1-pro-preview`, 사고 모드는 `GEMINI_THINKING_LEVEL` 등 `.env.example` 참고).
 - 분석 결과는 Zod 검증된 JSON으로 반환된다.
 - 결과 카드에는 논리적 취약점·반론이 드러나며, 위치·원문·개선 질문·evidence가 함께 표시된다.
 - evidence에는 `title`, `url`, `snippet`, `stance`가 포함된다.

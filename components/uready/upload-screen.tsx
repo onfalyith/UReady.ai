@@ -5,23 +5,26 @@ import { Loader2 } from "lucide-react"
 import { SharedNav } from "./shared-nav"
 
 type UploadScreenProps = {
-  draftText: string
+  /** 직접 입력란에만 표시 */
+  textareaDraft: string
+  selectedFile: File | null
   extractingDocument: boolean
   /** `/api/analyze` 실패 시 표시 */
   analysisError?: string | null
   onDismissAnalysisError?: () => void
-  onDraftTextChange: (value: string) => void
+  onTextareaChange: (value: string) => void
   onDocumentFile: (file: File) => void
   onStart: () => void
   onLogoClick: () => void
 }
 
 export function UploadScreen({
-  draftText,
+  textareaDraft,
+  selectedFile,
   extractingDocument,
   analysisError,
   onDismissAnalysisError,
-  onDraftTextChange,
+  onTextareaChange,
   onDocumentFile,
   onStart,
   onLogoClick,
@@ -49,6 +52,10 @@ export function UploadScreen({
   }
 
   const busy = extractingDocument
+  const fileSelected = selectedFile !== null
+  const showFileTitle = fileSelected && !busy
+  const dualHint =
+    fileSelected && textareaDraft.trim().length > 0
 
   return (
     <div className="flex min-h-screen flex-col bg-uready-gray-50">
@@ -108,9 +115,15 @@ export function UploadScreen({
               <label className="mb-2.5 block text-xs font-semibold uppercase tracking-wider text-uready-gray-500">
                 발표 대본
               </label>
+              {dualHint ? (
+                <p className="mb-2 text-left text-[11px] leading-relaxed text-uready-gray-400">
+                  대본과 발표 자료를 함께 보내면 말할 내용·화면 자료를 묶어서
+                  검토합니다.
+                </p>
+              ) : null}
               <textarea
-                value={draftText}
-                onChange={(e) => onDraftTextChange(e.target.value)}
+                value={textareaDraft}
+                onChange={(e) => onTextareaChange(e.target.value)}
                 disabled={busy}
                 placeholder={`텍스트를 여기에 붙여 넣으세요.
 (예: 안녕하십니까 이번 발표 주제를 선정한 이유는 다음과 같은 현상에 주목하여...)`}
@@ -154,13 +167,29 @@ export function UploadScreen({
                     ↑
                   </span>
                 )}
-                <span className="text-[13px] font-medium text-uready-gray-500">
-                  파일 크기는 15MB 미만, 텍스트가 포함되어야 해요
-                </span>
-                <span className="text-[11px] leading-snug text-uready-gray-400">
-                  PDF나 TXT 파일을 넣으면 질문받을 수 있는 부분을 먼저
-                  짚어드립니다
-                </span>
+                {showFileTitle ? (
+                  <>
+                    <span
+                      className="max-w-full truncate px-1 text-[14px] font-semibold text-uready-gray-900"
+                      title={selectedFile.name}
+                    >
+                      {selectedFile.name}
+                    </span>
+                    <span className="text-[11px] leading-snug text-uready-gray-400">
+                      다른 파일로 바꾸려면 이 영역을 눌러 주세요
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[13px] font-medium text-uready-gray-500">
+                      파일 크기는 15MB 미만, 텍스트가 포함되어야 해요
+                    </span>
+                    <span className="text-[11px] leading-snug text-uready-gray-400">
+                      PDF나 TXT 파일을 넣으면 질문받을 수 있는 부분을 먼저
+                      짚어드립니다
+                    </span>
+                  </>
+                )}
               </button>
             </div>
 

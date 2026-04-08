@@ -2,7 +2,9 @@
  * UReady 발표 검증 앱 — 화면·입력·상태 타입
  *
  * 상태 분리:
- * - `draftText` / `selectedFile`: 업로드·입력 텍스트
+ * - `textareaDraft`: 발표 대본 입력란(직접 입력만 표시)
+ * - `documentText`: 파일에서 읽은 본문(분석용, 입력란에 넣지 않음)
+ * - `selectedFile`: 선택된 PDF/TXT
  * - `extractingDocument`: PDF 등 서버 추출 로딩
  * - `screen === "loading"`: `/api/analyze` 분석 로딩
  * - `analysisResult`: 분석 성공 시 구조화 JSON (없으면 null)
@@ -33,8 +35,10 @@ export type UReadyIssue = {
 
 export type UReadyAppState = {
   screen: UReadyScreen
-  /** 업로드 화면 텍스트 */
-  draftText: string
+  /** 직접 입력란에만 표시되는 텍스트 */
+  textareaDraft: string
+  /** 파일에서 추출·읽은 본문(분석 시 파일이 있으면 이 값 사용) */
+  documentText: string
   selectedFile: File | null
   sourceKind: UReadySourceKind
   /** 로딩/결과 상단에 표시할 라벨 */

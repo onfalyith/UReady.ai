@@ -27,6 +27,8 @@ const bodySchema = z.object({
     .max(MAX_TEXT_CHARS, "text too long"),
   /** 선택: 발표 주제·강조점 — 분석 프롬프트에 반영 */
   userFocusNotes: z.string().max(12_000).optional(),
+  /** 발표 대본 + 발표 자료 동시 제출 — 통합·교차 검토 프롬프트 */
+  dualSourceMode: z.boolean().optional(),
 })
 
 export async function POST(request: Request) {
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     return Response.json({ error: msg }, { status: 400 })
   }
 
-  const { text, userFocusNotes } = parsed.data
+  const { text, userFocusNotes, dualSourceMode } = parsed.data
   const trimmed = text.trim()
   const focusTrimmed = userFocusNotes?.trim()
 
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
     const { analysis, providerMetadata, groundingSteps, materialMeta } =
       await runPresentationAnalysis(trimmed, {
         ...(focusTrimmed ? { userFocusNotes: focusTrimmed } : {}),
+        ...(dualSourceMode === true ? { dualSourceMode: true } : {}),
       })
 
     const metaValidated = materialMetaSchema.parse(materialMeta)

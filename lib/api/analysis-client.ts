@@ -11,7 +11,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 export async function analyzePresentationText(
   text: string,
-  opts?: { userFocusNotes?: string }
+  opts?: { userFocusNotes?: string; dualSourceMode?: boolean }
 ): Promise<
   | {
       ok: true
@@ -21,12 +21,14 @@ export async function analyzePresentationText(
   | { ok: false; message: string }
 > {
   const focus = opts?.userFocusNotes?.trim()
+  const dual = opts?.dualSourceMode === true
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       text,
       ...(focus ? { userFocusNotes: focus } : {}),
+      ...(dual ? { dualSourceMode: true } : {}),
     }),
   })
 

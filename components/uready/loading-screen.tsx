@@ -155,8 +155,6 @@ export function LoadingScreen({
           </div>
 
           <p className="loading-hint mt-6 text-[12px] text-uready-gray-400">
-            질문 대응이 어려울 수 있는 문장을 먼저 점검하는 중입니다.
-            <br />
             브라우저를 닫지 마세요. 분석이 끝나면 결과 화면으로 이동합니다.
           </p>
         </div>

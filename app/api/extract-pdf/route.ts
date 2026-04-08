@@ -5,7 +5,10 @@ import {
 } from "@/lib/rate-limit"
 import { savePdfExtractionRecord } from "@/lib/db/persist/presentation-pipeline"
 import { extractTextWithPdfJs } from "@/lib/pdf/extract-with-pdfjs"
-import { extractTextWithUnstructured } from "@/lib/pdf/extract-with-unstructured"
+import {
+  extractTextWithUnstructured,
+  isUnstructuredApiConfigured,
+} from "@/lib/pdf/extract-with-unstructured"
 import { isPdfJsExtractionLowQuality } from "@/lib/pdf/extraction-heuristic"
 
 export const runtime = "nodejs"
@@ -89,6 +92,30 @@ export async function POST(request: Request) {
   const pdfJsFallback = pdfJsText.trim()
   const canUsePdfJsFallback = pdfJsFallback.replace(/\s/g, "").length >= 20
 
+  /** 키 없이 Unstructured를 호출하면 예외 → 502로 보이므로, 먼저 분기합니다. */
+  if (!isUnstructuredApiConfigured()) {
+    if (canUsePdfJsFallback) {
+      await savePdfExtractionRecord({
+        text: pdfJsFallback,
+        filename: file.name,
+        extractionSource: "pdfjs",
+        clientIdentifier: getRequestFingerprint(request),
+      })
+      return json(
+        { success: true, text: pdfJsFallback, source: "pdfjs" },
+        200
+      )
+    }
+    return json(
+      {
+        success: false,
+        error:
+          "PDF에서 읽어 온 텍스트가 너무 적습니다. 서버 재추출을 쓰려면 프로젝트 루트 .env.local에 UNSTRUCTURED_API_KEY를 넣고 개발 서버를 다시 켜 주세요. 또는 본문을 복사해 TXT로 붙여 넣거나, 텍스트가 많이 포함된 PDF를 사용해 보세요. (스캔·이미지 위주 PDF는 추출이 어려울 수 있습니다.)",
+      },
+      422
+    )
+  }
+
   try {
     const { text } = await extractTextWithUnstructured(file)
     if (!text.trim()) {
@@ -140,7 +167,7 @@ export async function POST(request: Request) {
           success: false,
           error: `pdf.js: ${pdfJsError} / Unstructured: ${msg}`,
         },
-        502
+        503
       )
     }
     return json(
@@ -148,7 +175,7 @@ export async function POST(request: Request) {
         success: false,
         error: `추출 품질이 낮아 Unstructured로 재시도했으나 실패했습니다. (${msg})`,
       },
-      502
+      503
     )
   }
 }

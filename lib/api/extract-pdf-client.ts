@@ -4,7 +4,9 @@ import type { PdfJsExtractionMeta } from "@/lib/pdf/extraction-heuristic"
 import { isPdfJsExtractionLowQuality } from "@/lib/pdf/extraction-heuristic"
 
 /** package.json의 pdfjs-dist와 맞춤 (worker/main 불일치 시 런타임 오류 방지) */
-const PDFJS_DIST_VERSION = "5.6.205"
+export const PDFJS_DIST_VERSION = "5.6.205"
+
+export const PDFJS_BROWSER_WORKER_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_DIST_VERSION}/legacy/build/pdf.worker.min.mjs`
 
 type BrowserPdfExtractOk = {
   ok: true
@@ -24,7 +26,7 @@ async function extractPdfTextInBrowser(
 ): Promise<BrowserPdfExtractResult> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_DIST_VERSION}/legacy/build/pdf.worker.min.mjs`
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_BROWSER_WORKER_URL
 
     const data = new Uint8Array(await file.arrayBuffer())
     const loadingTask = pdfjs.getDocument({
