@@ -141,6 +141,8 @@ export const evidenceSchema = z
 const presentationIssueStrictSchema = z.object({
   location: z.string(),
   originalText: z.string(),
+  /** Whitelist 3조건 중 무엇에 해당하는지·왜 핵심 논증만 검증하는지 자기 증명 */
+  categoryCheck: z.string(),
   logicalWeakness: z.string(),
   counterArgument: z.string(),
   improvementQuestion: z.string(),
@@ -159,6 +161,8 @@ export const presentationIssueSchema = z
     quote: z.string().optional(),
     excerpt: z.string().optional(),
     text: z.string().optional(),
+    categoryCheck: z.string().optional(),
+    category_check: z.string().optional(),
     logicalWeakness: z.string().optional(),
     logical_weakness: z.string().optional(),
     counterArgument: z.string().optional(),
@@ -226,6 +230,11 @@ export const presentationIssueSchema = z
         "—"
       ),
       originalText: originalText || "(원문 인용 없음)",
+      categoryCheck: pickString(
+        row,
+        ["categoryCheck", "category_check"],
+        "분석 대상 조건 충족 근거가 응답에 누락되어 재확인이 필요합니다."
+      ),
       logicalWeakness: pickString(
         row,
         ["logicalWeakness", "logical_weakness"],

@@ -1,8 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { SharedNav } from "@/components/uready/shared-nav"
 import { IssueCard } from "@/components/issue-card"
+import {
+  SourceTextPanel,
+  type SourceTextPanelHandle,
+} from "@/components/source-text-panel"
 import type { AnalysisMaterialMeta } from "@/lib/ai/schema"
 import type { PresentationAnalysis } from "@/types/analysis"
 
@@ -13,7 +17,7 @@ function buildCopyText(
 ) {
   const noWeb = opts?.usedNoToolFallback === true
   const lines = [
-    "📋 UReady.ai 분석 결과",
+    "📋 UReady.ai — 발표 전에 꼭 확인할 부분",
     "",
     `파일/출처: ${displayFilename}`,
     `허점 수: ${data.issues.length}`,
@@ -25,10 +29,11 @@ function buildCopyText(
   }
   data.issues.forEach((issue, i) => {
     lines.push(`허점 #${i + 1} (${issue.location})`)
-    lines.push(`원문: ${issue.originalText}`)
-    lines.push(`논리적 취약점: ${issue.logicalWeakness}`)
-    lines.push(`반론: ${issue.counterArgument}`)
-    lines.push(`개선 방향: ${issue.improvementQuestion}`)
+    lines.push(`발표에 들어간 문장: ${issue.originalText}`)
+    lines.push(`왜 이 부분이 위험한가: ${issue.categoryCheck}`)
+    lines.push(`왜 질문이 들어올 수 있나 (논리): ${issue.logicalWeakness}`)
+    lines.push(`왜 질문이 들어올 수 있나 (예상 반론): ${issue.counterArgument}`)
+    lines.push(`발표 전에 이렇게 확인해보세요: ${issue.improvementQuestion}`)
     if (!noWeb) {
       if (issue.sourceReliability === "low_credibility") {
         lines.push("(근거 자료 출처의 신뢰도가 낮습니다)")
@@ -51,6 +56,8 @@ function buildCopyText(
 
 type ResultScreenProps = {
   displayFilename: string
+  /** 분석에 사용된 TXT/PDF·직접 입력 원문 전체 */
+  sourceText: string
   analysis: PresentationAnalysis
   materialMeta: AnalysisMaterialMeta | null
   onReset: () => void
@@ -59,6 +66,7 @@ type ResultScreenProps = {
 
 export function ResultScreen({
   displayFilename,
+  sourceText,
   analysis,
   materialMeta,
   onReset,
@@ -66,6 +74,38 @@ export function ResultScreen({
 }: ResultScreenProps) {
   const [toastOpen, setToastOpen] = useState(false)
   const issues = analysis.issues
+  const sourcePanelRef = useRef<SourceTextPanelHandle>(null)
+  const [activeIssueIndex, setActiveIssueIndex] = useState(0)
+
+  useEffect(() => {
+    if (issues.length === 0) return
+    setActiveIssueIndex((i) => Math.min(i, issues.length - 1))
+  }, [issues.length])
+
+  const navigateIssue = useCallback(
+    (delta: -1 | 1) => {
+      if (issues.length === 0) return
+      setActiveIssueIndex((prev) => {
+        const n = issues.length
+        const next = (prev + delta + n) % n
+        queueMicrotask(() => {
+          sourcePanelRef.current?.scrollToIssue(next)
+          document
+            .getElementById(`uready-issue-${next}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+        })
+        return next
+      })
+    },
+    [issues.length]
+  )
+
+  const activateIssueFromCard = useCallback((idx: number) => {
+    setActiveIssueIndex(idx)
+    queueMicrotask(() => {
+      sourcePanelRef.current?.scrollToIssue(idx)
+    })
+  }, [])
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(
@@ -123,21 +163,21 @@ export function ResultScreen({
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[820px] flex-1 px-4 py-10 pb-20 sm:px-6">
+      <div className="mx-auto w-full max-w-[1100px] flex-1 px-4 py-10 pb-20 sm:px-6">
         <header className="mb-8">
           <h2 className="mb-1.5 text-2xl font-extrabold tracking-tight text-uready-gray-900">
-            📋 분석 결과
+            발표 전에 꼭 확인할 부분
           </h2>
-          <p className="text-sm text-uready-gray-500">
+          <p className="max-w-xl text-sm leading-relaxed text-uready-gray-500">
             {issues.length === 0 ? (
               "발견된 항목이 없습니다."
             ) : (
               <>
-                총{" "}
-                <strong className="font-bold text-uready-red">
-                  {issues.length}개
-                </strong>
-                의 항목이 발견되었습니다. 바로 확인해보세요!
+                질문 들어오면 막힐 수 있는 부분을 먼저 정리했어요.
+                <br />
+                출처가 약한 주장, 설명이 빈약한 개념, 비교 근거 없는 결론부터
+                확인해보세요. 원문 ◀ ▶ 로 넘기거나, 카드·하이라이트를 눌러
+                이동할 수 있어요.
               </>
             )}
           </p>
@@ -204,20 +244,60 @@ export function ResultScreen({
         ) : null}
 
         {issues.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
-            눈에 띄는 허점이 발견되지 않았어요.
-          </p>
-        ) : (
-          <ul className="m-0 list-none space-y-5 p-0">
-            {issues.map((issue, index) => (
-              <IssueCard
-                key={`${issue.location}-${index}`}
-                issue={issue}
-                index={index}
-                usedNoToolFallback={materialMeta?.usedNoToolFallback === true}
+          <div className="space-y-8">
+            <section>
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+                제출 원문
+              </h3>
+              <SourceTextPanel
+                ref={sourcePanelRef}
+                sourceText={sourceText}
+                issues={issues}
+                activeIssueIndex={0}
+                onActiveIssueIndexChange={() => {}}
+                onNavigateIssue={() => {}}
               />
-            ))}
-          </ul>
+            </section>
+            <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
+              눈에 띄는 허점이 발견되지 않았어요.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-start lg:gap-12">
+            <section className="order-1 lg:sticky lg:top-28 lg:max-h-[calc(100vh-7rem)] lg:self-start">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+                제출 원문
+              </h3>
+              <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
+                위 ◀ ▶ 로 허점 번호를 바꿀 수 있어요. 하이라이트·허점 카드를
+                누르면 서로 해당 위치로 스크롤됩니다.
+              </p>
+              <SourceTextPanel
+                ref={sourcePanelRef}
+                sourceText={sourceText}
+                issues={issues}
+                activeIssueIndex={activeIssueIndex}
+                onActiveIssueIndexChange={setActiveIssueIndex}
+                onNavigateIssue={navigateIssue}
+              />
+            </section>
+            <section className="order-2 min-w-0">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+                점검할 부분
+              </h3>
+              <ul className="m-0 list-none space-y-5 p-0">
+                {issues.map((issue, index) => (
+                  <IssueCard
+                    key={`${issue.location}-${index}`}
+                    issue={issue}
+                    index={index}
+                    usedNoToolFallback={materialMeta?.usedNoToolFallback === true}
+                    onActivate={activateIssueFromCard}
+                  />
+                ))}
+              </ul>
+            </section>
+          </div>
         )}
 
         <p className="mt-12 text-xs font-semibold leading-relaxed text-primary sm:text-sm">

@@ -11,6 +11,10 @@ export function AppLegalFooter() {
         </p>
         <ul className="m-0 list-disc space-y-2 pl-4">
           <li>
+            현재는 베타 테스트 중이며, 일부 결과는 예시 또는 테스트용 분석
+            형태로 제공될 수 있습니다.
+          </li>
+          <li>
             AI의 검증 결과는 완벽하지 않을 수 있으며, 부정확한 정보가 포함될 수
             있습니다. 사실 교차 검증 및 내용 개선 보조 도구로만 활용하세요.
           </li>

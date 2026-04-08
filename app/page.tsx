@@ -36,12 +36,6 @@ export default function Home() {
     setState((s) => ({ ...s, analysisError: null }))
   }, [])
 
-  const dropzoneLabel = state.extractingDocument
-    ? "PDF 텍스트 추출 중…"
-    : state.selectedFile
-      ? state.selectedFile.name
-      : "PDF 또는 TXT 파일 업로드"
-
   const handleDocumentFile = useCallback(async (file: File) => {
     const v = validateUploadDocument(file)
     if (!v.ok) {
@@ -147,7 +141,6 @@ export default function Home() {
       {state.screen === "upload" && (
         <UploadScreen
           draftText={state.draftText}
-          dropzoneLabel={dropzoneLabel}
           extractingDocument={state.extractingDocument}
           analysisError={state.analysisError}
           onDismissAnalysisError={dismissAnalysisError}
@@ -170,6 +163,7 @@ export default function Home() {
       {state.screen === "result" && state.analysisResult ? (
         <ResultScreen
           displayFilename={state.displayFilename}
+          sourceText={state.draftText}
           analysis={state.analysisResult}
           materialMeta={state.analysisMaterialMeta}
           onReset={resetToUpload}

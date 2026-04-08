@@ -10,7 +10,8 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 export async function analyzePresentationText(
-  text: string
+  text: string,
+  opts?: { userFocusNotes?: string }
 ): Promise<
   | {
       ok: true
@@ -19,10 +20,14 @@ export async function analyzePresentationText(
     }
   | { ok: false; message: string }
 > {
+  const focus = opts?.userFocusNotes?.trim()
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      ...(focus ? { userFocusNotes: focus } : {}),
+    }),
   })
 
   const raw: unknown = await res.json().catch(() => ({}))

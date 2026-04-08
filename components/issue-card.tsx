@@ -2,6 +2,7 @@
 
 import type { PresentationIssue } from "@/types/analysis"
 import { EvidenceList } from "@/components/evidence-list"
+import { filterSubstantiveEvidence } from "@/lib/uready/evidence-ui"
 
 function sourceTrustNotice(
   level: PresentationIssue["sourceReliability"]
@@ -52,18 +53,37 @@ type IssueCardProps = {
   issue: PresentationIssue
   index: number
   usedNoToolFallback?: boolean
+  /** 카드 본문 클릭 시 원문 하이라이트로 스크롤(링크·내부 버튼 제외) */
+  onActivate?: (index: number) => void
 }
 
 export function IssueCard({
   issue,
   index,
   usedNoToolFallback = false,
+  onActivate,
 }: IssueCardProps) {
   const trustNotice =
     usedNoToolFallback ? null : sourceTrustNotice(issue.sourceReliability)
 
+  const substantiveEvidence = filterSubstantiveEvidence(issue.evidence)
+
   return (
-    <li className="overflow-hidden rounded-2xl border border-uready-gray-200 bg-white shadow-uready-sm">
+    <li
+      id={`uready-issue-${index}`}
+      className={`scroll-mt-28 overflow-hidden rounded-2xl border border-uready-gray-200 bg-white shadow-uready-sm transition-shadow duration-300 ${
+        onActivate ? "cursor-pointer" : ""
+      }`}
+      onClick={
+        onActivate
+          ? (e) => {
+              const t = e.target as HTMLElement
+              if (t.closest("a[href], button")) return
+              onActivate(index)
+            }
+          : undefined
+      }
+    >
       <div className="border-b border-uready-gray-100 px-[22px] py-3.5">
         <span className="text-xs font-bold uppercase tracking-wide text-uready-gray-400">
           허점 #{index + 1}
@@ -84,7 +104,7 @@ export function IssueCard({
 
         <section className="mb-5">
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            원문 문장
+            발표에 들어간 문장
           </h3>
           <p className="rounded-r-md border-l-[3px] border-primary bg-highlight px-4 py-3.5 text-sm font-bold leading-relaxed text-uready-gray-900">
             {usedNoToolFallback ? noToolQuotationText(issue) : issue.originalText}
@@ -95,10 +115,10 @@ export function IssueCard({
 
         <section className="mb-5">
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            논리적 취약점
+            왜 이 부분이 위험한가
           </h3>
           <p className="text-sm leading-loose text-uready-gray-700">
-            {issue.logicalWeakness}
+            {issue.categoryCheck}
           </p>
         </section>
 
@@ -106,8 +126,17 @@ export function IssueCard({
 
         <section className="mb-5">
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            반론
+            왜 질문이 들어올 수 있나
           </h3>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-uready-gray-400">
+            논리적 취약점
+          </p>
+          <p className="text-sm leading-loose text-uready-gray-700">
+            {issue.logicalWeakness}
+          </p>
+          <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-uready-gray-400">
+            예상 반론
+          </p>
           <p className="text-sm leading-loose text-uready-gray-700">
             {issue.counterArgument}
           </p>
@@ -117,7 +146,7 @@ export function IssueCard({
 
         <section className="mb-5">
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-            개선 방향
+            발표 전에 이렇게 확인해보세요
           </h3>
           <div className="rounded-[10px] border border-primary/25 bg-uready-red-light px-4 py-3.5 text-sm font-medium leading-relaxed text-uready-gray-900">
             {issue.improvementQuestion}
@@ -135,16 +164,8 @@ export function IssueCard({
           </>
         ) : null}
 
-        {!usedNoToolFallback ? (
-          <>
-            <div className="my-4 h-px bg-uready-gray-100" />
-            <section>
-              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-                출처 및 근거
-              </h3>
-              <EvidenceList items={issue.evidence} />
-            </section>
-          </>
+        {substantiveEvidence.length > 0 ? (
+          <EvidenceList items={substantiveEvidence} />
         ) : null}
       </div>
     </li>

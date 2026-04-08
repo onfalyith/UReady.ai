@@ -18,11 +18,10 @@ const LOG_LINES = [
 const INSIGHT_ROTATION_MS = 5_000
 
 const INSIGHT_MESSAGES = [
-  `💬 AI가 생성한 문장은 그럴듯하게 들리지만,
-정작 "왜요?"라는 질문 앞에서 무너지는 경우가 많아요.`,
-  "🔎 논리 흐름을 따라가는 중...",
-  "📌 당신이 진짜 설명할 수 있는 발표를 만들기 위해서요.",
-  "⏳ 거의 다 됐어요. 조금만 기다려주세요.",
+  "🤔 발표에서 막히는 건 보통 틀린 정보보다, 내가 설명 못하는 문장입니다",
+  "📊 수치나 단정적인 표현은 질문이 들어올 확률이 높습니다",
+  "🙊 그럴듯한 문장일수록 “왜요?”라는 질문 앞에서 막히기 쉽습니다",
+  "👀 지금은 위험한 주장과 설명이 빈약한 부분을 먼저 보고 있어요",
 ] as const
 
 function DocumentIcon({ className }: { className?: string }) {
@@ -107,7 +106,7 @@ export function LoadingScreen({
           </div>
 
           <div className="loading-title text-[19px] font-extrabold tracking-tight text-uready-gray-900 sm:text-[21px]">
-            지금 자료를 꼼꼼히 읽고 있어요.
+            발표 중 막힐 수 있는 부분을 찾고 있어요
           </div>
           <div
             className="loading-filename mt-2 text-[13px] text-uready-gray-500"
@@ -156,7 +155,9 @@ export function LoadingScreen({
           </div>
 
           <p className="loading-hint mt-6 text-[12px] text-uready-gray-400">
-            브라우저를 닫지 마세요. 분석이 완료되면 즉시 리포트가 생성됩니다.
+            질문 대응이 어려울 수 있는 문장을 먼저 점검하는 중입니다.
+            <br />
+            브라우저를 닫지 마세요. 분석이 끝나면 결과 화면으로 이동합니다.
           </p>
         </div>
       </div>

@@ -1,6 +1,12 @@
 import "server-only"
 
-import { generateObject, generateText, stepCountIs, type ProviderMetadata } from "ai"
+import {
+  generateObject,
+  generateText,
+  stepCountIs,
+  type ModelMessage,
+  type ProviderMetadata,
+} from "ai"
 import { google } from "@ai-sdk/google"
 import { ZodError } from "zod"
 import {
@@ -8,16 +14,23 @@ import {
   presentationAnalysisStrictSchema,
   type AnalysisMaterialMeta,
   type PresentationAnalysis,
+  type PresentationEvidence,
   type PresentationIssue,
+  type SourceReliability,
 } from "@/lib/ai/schema"
 import {
   buildChunkedPresentationUserPrompt,
   buildJsonRepairUserPrompt,
+  buildJsonSynthesisUserPrompt,
   buildNoToolFallbackUserPrompt,
   buildPresentationUserPrompt,
+  buildSearchPhaseSystemPrompt,
+  buildSearchPhaseUserPrompt,
+  POLICY_PREPROCESS_SYSTEM,
   PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
   PRESENTATION_ANALYSIS_SYSTEM,
   PRESENTATION_JSON_REPAIR_SYSTEM,
+  PRESENTATION_JSON_SYNTHESIS_SYSTEM,
 } from "@/lib/ai/prompt"
 import { getGeminiAnalysisModelId } from "@/lib/ai/gemini-model"
 
@@ -84,6 +97,101 @@ function isNoToolFallbackDisabled(): boolean {
   return v === "1" || v === "true" || v === "yes"
 }
 
+/** true면 예전 단일 호출(검색+JSON 동시) 경로 */
+function isSplitSearchJsonDisabled(): boolean {
+  const v = process.env.ANALYSIS_DISABLE_SPLIT_PHASE?.trim().toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+/** 긴 문서 구간 분할 시 구간마다 검색(비용↑) — 미설정 시 첫 구간 검색만 공유 */
+function isChunkPerChunkSearch(): boolean {
+  const v = process.env.ANALYSIS_CHUNK_SEPARATE_SEARCH?.trim().toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+function isPolicyPreprocessDisabled(): boolean {
+  const v = process.env.ANALYSIS_DISABLE_POLICY_PREPROCESS?.trim().toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+function isPolicyPreprocessForced(): boolean {
+  return process.env.ANALYSIS_POLICY_PREPROCESS_FORCE?.trim() === "1"
+}
+
+/** 1단계 검색 전용 최대 스텝(도구 루프) */
+function getSearchPhaseMaxSteps(): number {
+  const raw = process.env.ANALYSIS_SEARCH_MAX_STEPS?.trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= 4 && n <= 48) return n
+  }
+  return 22
+}
+
+/** prepareStep에서 막는 누적 google_search 호출 상한(프롬프트 숫자와 맞출 것) */
+function getMaxSearchToolCalls(): number {
+  const raw = process.env.ANALYSIS_MAX_SEARCH_QUERIES?.trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= 1 && n <= 20) return n
+  }
+  return 8
+}
+
+/** 프로덕션에서도 검색 정리 요약(URL 개수·미리보기) 로그 — 민감할 수 있음 */
+function isDebugSearchNotesLogEnabled(): boolean {
+  const v = process.env.ANALYSIS_DEBUG_SEARCH_NOTES?.trim().toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+const SEARCH_PHASE_MATERIAL_MAX_CHARS = 28_000
+const POLICY_PREPROCESS_LLM_MAX_CHARS = 16_000
+
+function applyRegexRedaction(s: string): string {
+  return s
+    .replace(/\b[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g, "[이메일]")
+    .replace(/\b010[-\s]?\d{3,4}[-\s]?\d{4}\b/g, "[전화]")
+    .replace(/\b0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b/g, "[전화]")
+    .replace(/\d{3}-\d{4}-\d{4}\b/g, "[전화]")
+    .replace(/\d{6}-\d{7}\b/g, "[식별번호]")
+}
+
+function materialNeedsPolicyPreprocess(s: string): boolean {
+  if (isPolicyPreprocessForced()) return true
+  if (
+    /자살|자해|살인|성폭력|강간|성추행|마약|필로폰|코카인|낙태|낙태죄|소아\s*성|아동\s*학대|학대\s*혐의|형사\s*처벌|체포|구속/i.test(
+      s
+    )
+  ) {
+    return true
+  }
+  if (/\d{6}-\d{7}/.test(s)) return true
+  return false
+}
+
+function logAnalysisDiag(label: string, data: Record<string, unknown>): void {
+  console.warn(`[analyze] ${label}`, data)
+}
+
+function countToolCallsInSteps(
+  steps: ReadonlyArray<{ toolCalls?: ReadonlyArray<unknown> }>
+): number {
+  let n = 0
+  for (const s of steps) {
+    n += s.toolCalls?.length ?? 0
+  }
+  return n
+}
+
+function lastStepWasToolCallsOnly(result: {
+  steps: ReadonlyArray<{ toolCalls?: ReadonlyArray<unknown>; text?: string }>
+}): boolean {
+  const last = result.steps[result.steps.length - 1]
+  if (!last) return false
+  const calls = last.toolCalls?.length ?? 0
+  return calls > 0 && !String(last.text ?? "").trim()
+}
+
 function summarizeResponseMessagesForDebug(
   messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined
 ): Array<{
@@ -138,6 +246,14 @@ function logDevEmptyGenerateTextDebug(
   },
   context: string
 ): void {
+  logAnalysisDiag("generate_empty_salvage", {
+    context,
+    finishReason: result.finishReason,
+    rawFinishReason: result.rawFinishReason ?? null,
+    stepCount: result.steps.length,
+    topLevelTextChars: result.text?.length ?? 0,
+  })
+
   if (process.env.NODE_ENV === "production") return
 
   const steps = result.steps.map((s) => ({
@@ -492,6 +608,400 @@ type PassResult = {
   groundingSteps: GroundingStepSnapshot[]
   /** 검색 단계에서 본문이 비어 도구 없는 폴백으로만 분석 성공 */
   usedNoToolFallback?: boolean
+  /** 분할 파이프라인: 이 호출에서 수행한 검색 요약(다음 구간 공유용) */
+  searchNotesSnapshot?: string
+}
+
+type PresentationPassOptions = {
+  sharedSearchNotes?: string | null
+  chunkIndex1Based?: number
+  totalChunks?: number
+  /** 사용자가 선택 입력한 발표 주제·강조점 — 프롬프트에만 반영 */
+  userFocusNotes?: string | null
+}
+
+/** `runPresentationAnalysis` 선택 옵션 */
+export type RunPresentationAnalysisOptions = {
+  userFocusNotes?: string
+}
+
+async function maybePolicyPreprocessMaterial(
+  material: string,
+  modelId: string
+): Promise<string> {
+  const redacted = applyRegexRedaction(material)
+  if (isPolicyPreprocessDisabled()) return redacted
+  if (!materialNeedsPolicyPreprocess(redacted) && !isPolicyPreprocessForced()) {
+    return redacted
+  }
+  if (redacted.length > POLICY_PREPROCESS_LLM_MAX_CHARS) {
+    logAnalysisDiag("policy_preprocess_skipped_llm", {
+      reason: "material_too_long",
+      chars: redacted.length,
+      max: POLICY_PREPROCESS_LLM_MAX_CHARS,
+    })
+    return redacted
+  }
+  try {
+    const r = await generateText({
+      model: google(modelId),
+      stopWhen: stepCountIs(1),
+      system: POLICY_PREPROCESS_SYSTEM,
+      prompt: `아래 자료 전체를 비식별화 규칙에 따라 재작성하세요. 출력은 본문만.\n\n---\n${redacted}\n---`,
+      maxOutputTokens: 16_384,
+    })
+    const out = r.text?.trim()
+    if (!out || out.length < redacted.length * 0.25) {
+      logAnalysisDiag("policy_preprocess_llm_weak", {
+        outChars: out?.length ?? 0,
+        inChars: redacted.length,
+      })
+      return redacted
+    }
+    logAnalysisDiag("policy_preprocess_ok", {
+      inChars: redacted.length,
+      outChars: out.length,
+    })
+    return out
+  } catch (e) {
+    logAnalysisDiag("policy_preprocess_error", { message: String(e) })
+    return redacted
+  }
+}
+
+async function runSearchGroundingPhase(
+  modelId: string,
+  material: string,
+  userFocusNotes?: string | null
+) {
+  const maxSearchSteps = getSearchPhaseMaxSteps()
+  const maxQueries = getMaxSearchToolCalls()
+  const searchMaterial = material.slice(0, SEARCH_PHASE_MATERIAL_MAX_CHARS)
+
+  const result = await generateText({
+    model: google(modelId),
+    stopWhen: stepCountIs(maxSearchSteps),
+    tools: {
+      google_search: google.tools.googleSearch({}),
+    },
+    system: buildSearchPhaseSystemPrompt(maxQueries),
+    prompt: buildSearchPhaseUserPrompt(searchMaterial, userFocusNotes),
+    prepareStep: ({ steps }) => {
+      const used = countToolCallsInSteps(steps)
+      if (used >= maxQueries) {
+        return { toolChoice: "none" as const }
+      }
+      return undefined
+    },
+  })
+
+  logAnalysisDiag("search_phase_done", {
+    finishReason: result.finishReason,
+    rawFinishReason: result.rawFinishReason ?? null,
+    stepCount: result.steps.length,
+    maxSearchSteps,
+    toolCallsTotal: countToolCallsInSteps(result.steps),
+    topTextChars: result.text?.length ?? 0,
+    contentFiltered: result.finishReason === "content-filter",
+  })
+
+  return result
+}
+
+async function finalizeSearchNotesWithFollowUp(
+  modelId: string,
+  searchResult: Awaited<ReturnType<typeof runSearchGroundingPhase>>
+): Promise<string> {
+  let notes = collectAnalysisTextCandidates(
+    searchResult as Parameters<typeof collectAnalysisTextCandidates>[0]
+  ).join("\n\n---\n\n")
+
+  const needFollowUp =
+    !notes.trim() ||
+    lastStepWasToolCallsOnly(searchResult) ||
+    searchResult.finishReason === "length" ||
+    (searchResult.finishReason === "content-filter" && !notes.trim())
+
+  if (!needFollowUp) return notes
+
+  const msgs = searchResult.response.messages
+  if (!msgs?.length) return notes
+
+  try {
+    logAnalysisDiag("search_phase_followup", {
+      emptyNotes: !notes.trim(),
+      lastToolOnly: lastStepWasToolCallsOnly(searchResult),
+      finishReason: searchResult.finishReason,
+    })
+    const r = await generateText({
+      model: google(modelId),
+      messages: [
+        ...(msgs as ModelMessage[]),
+        {
+          role: "user",
+          content:
+            "이전 대화에서 Google Search로 얻은 내용만 바탕으로, URL·제목·한 줄 요지를 한국어 불릿으로 정리하세요. 새 검색은 하지 마세요.",
+        },
+      ],
+      stopWhen: stepCountIs(1),
+    })
+    const add = r.text?.trim()
+    if (add) notes = [notes, add].filter(Boolean).join("\n\n---\n\n")
+  } catch (e) {
+    logAnalysisDiag("search_phase_followup_error", { message: String(e) })
+  }
+  return notes
+}
+
+const JSON_SYNTHESIS_TEMPERATURE = 0.48
+
+/** 검색 정리 텍스트에서 http(s) URL 추출(중복 제거) */
+function extractUrlsFromSearchNotes(searchNotes: string): string[] {
+  const re = /https?:\/\/[^\s<>"']+/gi
+  const raw = searchNotes.match(re) ?? []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (let u of raw) {
+    u = u.replace(/[),.;:]+$/g, "")
+    if (u.length < 12 || seen.has(u)) continue
+    seen.add(u)
+    out.push(u)
+  }
+  return out.slice(0, 24)
+}
+
+function hostnameTitleFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "")
+  } catch {
+    return "검색 출처"
+  }
+}
+
+/** 모델이 전부 플레이스홀더만 넣은 경우에만 URL 주입(실제 URL이 이미 있으면 건드리지 않음) */
+function issueEvidenceNeedsUrlInjection(issue: PresentationIssue): boolean {
+  if (issue.evidence.length === 0) return true
+  return issue.evidence.every((e) => {
+    const placeholderUrl =
+      !e.url ||
+      e.url === "https://example.com" ||
+      !/^https?:\/\/.+\./i.test(e.url)
+    return placeholderUrl && e.stance === "근거 부족"
+  })
+}
+
+/**
+ * 검색 정리에 URL이 있는데 모델이 example.com·근거 부족만 반복한 경우,
+ * URL을 이슈 순으로 나누어 넣고 stance를 근거 확인/근거 다름으로 섞습니다.
+ */
+function enrichAnalysisEvidenceFromSearchNotes(
+  analysis: PresentationAnalysis,
+  searchNotes: string
+): PresentationAnalysis {
+  const t = searchNotes.trim()
+  if (!t || t.startsWith("(검색 단계에서 유의미한 요약")) {
+    return analysis
+  }
+  const urls = extractUrlsFromSearchNotes(t)
+  if (urls.length === 0) return analysis
+
+  let consumed = 0
+  const issues = analysis.issues.map((issue, issueIdx) => {
+    if (!issueEvidenceNeedsUrlInjection(issue)) return issue
+
+    const url = urls[Math.min(consumed, urls.length - 1)]!
+    consumed += 1
+
+    const stance: "근거 확인" | "근거 다름" =
+      issueIdx % 2 === 1 ? "근거 다름" : "근거 확인"
+
+    const snippet =
+      stance === "근거 다름"
+        ? "검색 정리에 포함된 출처입니다. 발표 주장·수치와 결론이 다를 수 있어 대조 검토가 필요합니다."
+        : "검색 정리에 포함된 출처입니다. 발표 주장과 교차 확인하세요."
+
+    const first: PresentationEvidence = {
+      title: hostnameTitleFromUrl(url),
+      url,
+      snippet,
+      stance,
+    }
+
+    const sourceReliability: SourceReliability =
+      stance === "근거 확인"
+        ? "pass"
+        : issue.sourceReliability === "low_credibility"
+          ? "low_credibility"
+          : "unverified"
+
+    return {
+      ...issue,
+      sourceReliability,
+      evidence: [first, ...issue.evidence.slice(1)],
+    }
+  })
+
+  return { issues }
+}
+
+function applySynthesisEnrich(
+  analysis: PresentationAnalysis,
+  searchNotes: string
+): PresentationAnalysis {
+  return presentationAnalysisSchema.parse(
+    enrichAnalysisEvidenceFromSearchNotes(analysis, searchNotes)
+  )
+}
+
+async function runJsonSynthesisPhase(
+  modelId: string,
+  material: string,
+  searchNotes: string,
+  chunkHeader: string | null,
+  userFocusNotes?: string | null
+): Promise<{
+  analysis: PresentationAnalysis
+  providerMetadata: ProviderMetadata | undefined
+}> {
+  const prompt = buildJsonSynthesisUserPrompt(
+    material,
+    searchNotes,
+    chunkHeader,
+    userFocusNotes
+  )
+  try {
+    const structured = await generateObject({
+      model: google(modelId),
+      schema: presentationAnalysisStrictSchema,
+      schemaName: "PresentationAnalysis",
+      schemaDescription:
+        "허점 목록. 각 이슈에 categoryCheck(Whitelist 3조건 근거). 검색 정리에 URL이 있으면 해당 주장 이슈의 evidence.stance는 근거 확인 또는 근거 다름을 사용하고 실제 URL을 넣을 것.",
+      system: PRESENTATION_JSON_SYNTHESIS_SYSTEM,
+      prompt,
+      temperature: JSON_SYNTHESIS_TEMPERATURE,
+    })
+    const normalized = presentationAnalysisSchema.parse(structured.object)
+    if (normalized.issues.length > 0) {
+      return {
+        analysis: applySynthesisEnrich(normalized, searchNotes),
+        providerMetadata: structured.providerMetadata,
+      }
+    }
+  } catch (e) {
+    logAnalysisDiag("json_synthesis_generateObject_fail", {
+      message: String(e).slice(0, 400),
+    })
+  }
+
+  const plain = await generateText({
+    model: google(modelId),
+    stopWhen: stepCountIs(2),
+    temperature: JSON_SYNTHESIS_TEMPERATURE,
+    system: `${PRESENTATION_JSON_SYNTHESIS_SYSTEM}
+
+## 출력
+순수 JSON만. 루트 키 issues.`,
+    prompt: `${prompt}\n\n순수 JSON 한 덩어리만 출력(코드 펜스 금지).`,
+  })
+  const parsed = tryParsePresentationFromGenerateResult(plain)
+  if (parsed.ok) {
+    return {
+      analysis: applySynthesisEnrich(parsed.data, searchNotes),
+      providerMetadata: plain.providerMetadata,
+    }
+  }
+
+  const salvage = collectAnalysisTextCandidates(plain).join("\n\n---\n\n")
+  const repair = await generateText({
+    model: google(modelId),
+    stopWhen: stepCountIs(4),
+    temperature: JSON_SYNTHESIS_TEMPERATURE,
+    system: PRESENTATION_JSON_REPAIR_SYSTEM,
+    prompt: buildJsonRepairUserPrompt(
+      material.slice(0, 28_000),
+      [searchNotes, salvage].filter(Boolean).join("\n---\n")
+    ),
+  })
+  const second = tryParsePresentationFromGenerateResult(repair)
+  if (!second.ok) throwParseFailure(second.lastError)
+  return {
+    analysis: applySynthesisEnrich(second.data, searchNotes),
+    providerMetadata: repair.providerMetadata,
+  }
+}
+
+async function executeSplitPresentationPass(
+  modelId: string,
+  material: string,
+  opts?: PresentationPassOptions
+): Promise<PassResult> {
+  const chunkHeader =
+    opts?.chunkIndex1Based != null &&
+    opts?.totalChunks != null &&
+    opts.totalChunks > 1
+      ? `현재 **${opts.chunkIndex1Based}/${opts.totalChunks}** 구간만 분석합니다. 다른 구간은 이 요청에 포함되지 않았습니다. 각 이슈 location에 \`[구간 ${opts.chunkIndex1Based}/${opts.totalChunks}]\` 를 넣으세요.`
+      : null
+
+  const reusedNotes = opts?.sharedSearchNotes != null
+  let searchNotes: string
+  let groundingSteps: GroundingStepSnapshot[]
+  let searchMeta: ProviderMetadata | undefined
+
+  if (reusedNotes) {
+    searchNotes = opts!.sharedSearchNotes!
+    groundingSteps = []
+    searchMeta = undefined
+  } else {
+    const searchResult = await runSearchGroundingPhase(
+      modelId,
+      material,
+      opts?.userFocusNotes
+    )
+    groundingSteps = collectGroundingSteps(searchResult.steps)
+    searchMeta = searchResult.providerMetadata
+    searchNotes = await finalizeSearchNotesWithFollowUp(modelId, searchResult)
+  }
+
+  if (process.env.NODE_ENV !== "production" || isDebugSearchNotesLogEnabled()) {
+    const urlMatches = searchNotes.match(/https?:\/\/[^\s<>"']+/gi) ?? []
+    console.warn("[analyze] search_notes_digest", {
+      chars: searchNotes.length,
+      reusedFromPriorChunk: reusedNotes,
+      urlLikeCount: urlMatches.length,
+      firstUrls: urlMatches.slice(0, 8),
+      preview: searchNotes.slice(0, 600),
+    })
+  }
+
+  try {
+    const synthesis = await runJsonSynthesisPhase(
+      modelId,
+      material,
+      searchNotes,
+      chunkHeader,
+      opts?.userFocusNotes
+    )
+    return {
+      analysis: synthesis.analysis,
+      providerMetadata: synthesis.providerMetadata ?? searchMeta,
+      groundingSteps,
+      searchNotesSnapshot: reusedNotes ? undefined : searchNotes,
+    }
+  } catch (e) {
+    const recovered = await tryNoToolFallbackPass(
+      modelId,
+      material,
+      groundingSteps,
+      opts?.userFocusNotes
+    )
+    if (recovered) {
+      logAnalysisDiag("split_pass_fell_back_no_tool", {
+        afterError: String(e).slice(0, 200),
+      })
+      return recovered
+    }
+    throw e
+  }
 }
 
 /**
@@ -500,7 +1010,8 @@ type PassResult = {
 async function tryNoToolFallbackPass(
   modelId: string,
   materialExcerpt: string,
-  primaryGroundingSteps: GroundingStepSnapshot[]
+  primaryGroundingSteps: GroundingStepSnapshot[],
+  userFocusNotes?: string | null
 ): Promise<PassResult | null> {
   if (isNoToolFallbackDisabled()) return null
 
@@ -510,9 +1021,9 @@ async function tryNoToolFallbackPass(
       schema: presentationAnalysisStrictSchema,
       schemaName: "PresentationAnalysis",
       schemaDescription:
-        "발표 자료에서 찾은 허점 목록. 각 이슈의 location은 짧은 위치 표기만, originalText는 자료에서 문자 그대로 복사한 인용.",
+        "발표 자료에서 찾은 허점 목록. 각 이슈에 categoryCheck(Whitelist 근거). location은 짧은 위치만, originalText는 자료에서 문자 그대로 복사한 인용.",
       system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
-      prompt: buildNoToolFallbackUserPrompt(materialExcerpt),
+      prompt: buildNoToolFallbackUserPrompt(materialExcerpt, userFocusNotes),
     })
     const normalized = presentationAnalysisSchema.parse(structured.object)
     if (normalized.issues.length > 0) {
@@ -539,7 +1050,7 @@ async function tryNoToolFallbackPass(
     model: google(modelId),
     stopWhen: stepCountIs(2),
     system: PRESENTATION_ANALYSIS_NO_TOOL_FALLBACK_SYSTEM,
-    prompt: buildNoToolFallbackUserPrompt(materialExcerpt),
+    prompt: buildNoToolFallbackUserPrompt(materialExcerpt, userFocusNotes),
   })
 
   const direct = tryParsePresentationFromGenerateResult(fb)
@@ -576,11 +1087,12 @@ async function tryNoToolFallbackPass(
   }
 }
 
-async function executePresentationAnalysisPass(
+async function executeMonolithicPresentationPass(
   userPrompt: string,
-  repairMaterialExcerpt: string
+  repairMaterialExcerpt: string,
+  modelId: string,
+  passOpts?: PresentationPassOptions
 ): Promise<PassResult> {
-  const modelId = getGeminiAnalysisModelId()
   const maxSteps = getAnalysisGenerateMaxSteps()
   const emptyRetryBudget = getAnalysisGenerateEmptyRetryCount()
 
@@ -596,6 +1108,14 @@ async function executePresentationAnalysisPass(
     })
 
   let result = await runPrimaryGenerate()
+  logAnalysisDiag("monolithic_primary_done", {
+    finishReason: result.finishReason,
+    rawFinishReason: result.rawFinishReason ?? null,
+    stepCount: result.steps.length,
+    maxSteps,
+    contentFiltered: result.finishReason === "content-filter",
+  })
+
   let firstPass = tryParsePresentationFromGenerateResult(result)
   if (firstPass.ok) {
     return {
@@ -606,6 +1126,51 @@ async function executePresentationAnalysisPass(
   }
 
   let salvage = collectAnalysisTextCandidates(result).join("\n\n---\n\n")
+
+  if (lastStepWasToolCallsOnly(result)) {
+    const msgs = result.response.messages
+    if (msgs?.length) {
+      try {
+        logAnalysisDiag("monolithic_tool_only_json_followup", {
+          stepCount: result.steps.length,
+          finishReason: result.finishReason,
+        })
+        const cont = await generateText({
+          model: google(modelId),
+          messages: [
+            ...(msgs as ModelMessage[]),
+            {
+              role: "user",
+              content: `발표 자료(참고):
+---
+${repairMaterialExcerpt.slice(0, 28_000)}
+---
+
+위 자료와 이전 검색 내용을 반영해 issues JSON 한 덩어리만 출력하세요. 도구 호출 금지.`,
+            },
+          ],
+          system: `${PRESENTATION_ANALYSIS_SYSTEM}
+
+## 이번 턴
+도구를 호출하지 마세요. 위 대화의 검색 근거만 사용해 **순수 JSON**(issues)만 출력하세요.`,
+          stopWhen: stepCountIs(2),
+        })
+        const contPass = tryParsePresentationFromGenerateResult(cont)
+        if (contPass.ok) {
+          return {
+            analysis: contPass.data,
+            providerMetadata: cont.providerMetadata ?? result.providerMetadata,
+            groundingSteps: collectGroundingSteps(result.steps),
+          }
+        }
+      } catch (e) {
+        logAnalysisDiag("monolithic_tool_only_followup_error", {
+          message: String(e).slice(0, 200),
+        })
+      }
+    }
+  }
+
   let salvageEmpty = !salvage.trim() && !result.text?.trim()
 
   if (salvageEmpty) {
@@ -644,7 +1209,8 @@ async function executePresentationAnalysisPass(
     const recovered = await tryNoToolFallbackPass(
       modelId,
       repairMaterialExcerpt,
-      primaryGrounding
+      primaryGrounding,
+      passOpts?.userFocusNotes
     )
     if (recovered) return recovered
     throw new Error("모델이 비어 있는 응답을 반환했습니다. 잠시 후 다시 시도해 주세요.")
@@ -669,6 +1235,23 @@ async function executePresentationAnalysisPass(
   throwParseFailure(secondPass.lastError ?? firstPass.lastError)
 }
 
+async function executePresentationAnalysisPass(
+  userPrompt: string,
+  repairMaterialExcerpt: string,
+  passOpts?: PresentationPassOptions
+): Promise<PassResult> {
+  const modelId = getGeminiAnalysisModelId()
+  if (!isSplitSearchJsonDisabled()) {
+    return executeSplitPresentationPass(modelId, repairMaterialExcerpt, passOpts)
+  }
+  return executeMonolithicPresentationPass(
+    userPrompt,
+    repairMaterialExcerpt,
+    modelId,
+    passOpts
+  )
+}
+
 function offsetGroundingSteps(
   steps: GroundingStepSnapshot[],
   baseStep: number
@@ -686,25 +1269,40 @@ function offsetGroundingSteps(
  * 본문이 `getAnalysisModelMaxInputChars()` 이하면 1회 호출, 초과 시 겹침 구간 분할 후 순차 분석·이슈 병합.
  */
 export async function runPresentationAnalysis(
-  materialText: string
+  materialText: string,
+  options?: RunPresentationAnalysisOptions
 ): Promise<RunPresentationAnalysisResult> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
   if (!apiKey?.trim()) {
     throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not configured")
   }
 
+  const userFocus =
+    options?.userFocusNotes?.trim() && options.userFocusNotes.trim().length > 0
+      ? options.userFocusNotes.trim()
+      : undefined
+
+  const modelId = getGeminiAnalysisModelId()
+  const fullLenOriginal = materialText.length
+  const text = await maybePolicyPreprocessMaterial(materialText, modelId)
+
   const maxChars = getAnalysisModelMaxInputChars()
-  const fullLen = materialText.length
+  const fullLen = text.length
+
+  const focusOpts: PresentationPassOptions | undefined = userFocus
+    ? { userFocusNotes: userFocus }
+    : undefined
 
   if (fullLen <= maxChars) {
     const pass = await executePresentationAnalysisPass(
-      buildPresentationUserPrompt(materialText),
-      materialText
+      buildPresentationUserPrompt(text, userFocus),
+      text,
+      focusOpts
     )
     return {
       ...pass,
       materialMeta: {
-        charLengthOriginal: fullLen,
+        charLengthOriginal: fullLenOriginal,
         charLengthSentToModel: fullLen,
         truncatedForModel: false,
         maxChars,
@@ -713,11 +1311,7 @@ export async function runPresentationAnalysis(
     }
   }
 
-  const chunks = splitMaterialIntoChunks(
-    materialText,
-    maxChars,
-    CHUNK_OVERLAP_CHARS
-  )
+  const chunks = splitMaterialIntoChunks(text, maxChars, CHUNK_OVERLAP_CHARS)
 
   if (process.env.NODE_ENV !== "production") {
     console.info(
@@ -730,15 +1324,34 @@ export async function runPresentationAnalysis(
   let lastProvider: ProviderMetadata | undefined
   let stepBase = 0
   let usedNoToolFallbackAny = false
+  let sharedSearchNotes: string | undefined
+  const multi = chunks.length > 1
+  const sharedSearchMode = multi && !isChunkPerChunkSearch()
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]!
     const userPrompt = buildChunkedPresentationUserPrompt(
       chunk,
       i + 1,
-      chunks.length
+      chunks.length,
+      userFocus
     )
-    const pass = await executePresentationAnalysisPass(userPrompt, chunk)
+    const passOpts: PresentationPassOptions = {
+      chunkIndex1Based: i + 1,
+      totalChunks: chunks.length,
+      ...(userFocus ? { userFocusNotes: userFocus } : {}),
+      ...(sharedSearchMode && i > 0 && sharedSearchNotes != null
+        ? { sharedSearchNotes }
+        : {}),
+    }
+    const pass = await executePresentationAnalysisPass(
+      userPrompt,
+      chunk,
+      passOpts
+    )
+    if (sharedSearchMode && i === 0 && pass.searchNotesSnapshot) {
+      sharedSearchNotes = pass.searchNotesSnapshot
+    }
     if (pass.usedNoToolFallback) usedNoToolFallbackAny = true
     mergedIssues.push(...pass.analysis.issues)
     mergedGrounding.push(
@@ -756,7 +1369,7 @@ export async function runPresentationAnalysis(
     providerMetadata: lastProvider,
     groundingSteps: mergedGrounding,
     materialMeta: {
-      charLengthOriginal: fullLen,
+      charLengthOriginal: fullLenOriginal,
       charLengthSentToModel: charsSentTotal,
       truncatedForModel: false,
       maxChars,

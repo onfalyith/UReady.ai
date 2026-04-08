@@ -25,6 +25,8 @@ const bodySchema = z.object({
     .string()
     .min(1, "text is required")
     .max(MAX_TEXT_CHARS, "text too long"),
+  /** 선택: 발표 주제·강조점 — 분석 프롬프트에 반영 */
+  userFocusNotes: z.string().max(12_000).optional(),
 })
 
 export async function POST(request: Request) {
@@ -53,8 +55,9 @@ export async function POST(request: Request) {
     return Response.json({ error: msg }, { status: 400 })
   }
 
-  const { text } = parsed.data
+  const { text, userFocusNotes } = parsed.data
   const trimmed = text.trim()
+  const focusTrimmed = userFocusNotes?.trim()
 
   if (countSignificantChars(trimmed) < MIN_ANALYSIS_SIGNIFICANT_CHARS) {
     return Response.json(
@@ -68,7 +71,9 @@ export async function POST(request: Request) {
 
   try {
     const { analysis, providerMetadata, groundingSteps, materialMeta } =
-      await runPresentationAnalysis(trimmed)
+      await runPresentationAnalysis(trimmed, {
+        ...(focusTrimmed ? { userFocusNotes: focusTrimmed } : {}),
+      })
 
     const metaValidated = materialMetaSchema.parse(materialMeta)
 

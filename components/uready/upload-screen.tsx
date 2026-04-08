@@ -6,7 +6,6 @@ import { SharedNav } from "./shared-nav"
 
 type UploadScreenProps = {
   draftText: string
-  dropzoneLabel: string
   extractingDocument: boolean
   /** `/api/analyze` 실패 시 표시 */
   analysisError?: string | null
@@ -19,7 +18,6 @@ type UploadScreenProps = {
 
 export function UploadScreen({
   draftText,
-  dropzoneLabel,
   extractingDocument,
   analysisError,
   onDismissAnalysisError,
@@ -76,7 +74,7 @@ export function UploadScreen({
 
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-10 pb-12 text-center sm:px-6 sm:py-16">
         <div className="mb-6 inline-flex items-center gap-1.5 rounded-full bg-uready-red-light px-3 py-1 text-xs font-semibold tracking-wide text-primary">
-          ✦ AI 발표 허점 스캐너
+          과제 제출 전, AI가 만든 자료가 불안할 때
         </div>
 
         <h1 className="mb-5 max-w-[700px] text-[clamp(28px,5vw,46px)] font-black leading-tight tracking-tight text-uready-gray-900">
@@ -85,20 +83,10 @@ export function UploadScreen({
           <span className="text-primary">어떻게 답하지?</span>
         </h1>
 
-        <p className="mb-12 max-w-[520px] text-[clamp(14px,2vw,16px)] leading-relaxed text-uready-gray-500">
-          AI가 생성한 환각(Hallucination)과 논리적 취약점을{" "}
-          <strong className="font-semibold text-uready-gray-900">
-            평균 1분 안에
-          </strong>{" "}
-          찾아냅니다.
-          <br />
-          그럴듯해 보일수록 커지는{" "}
-          <strong className="font-semibold text-uready-gray-900">
-            발표 불안,
-          </strong>{" "}
-          <strong className="font-semibold text-primary">
-            내 것으로 준비하세요.
-          </strong>
+        <p className="mb-12 max-w-[520px] whitespace-pre-line text-[clamp(14px,2vw,16px)] leading-relaxed text-uready-gray-500">
+          {`AI로 만든 발표 대본이나 자료를 넣으면,
+외부 질문에 막힐 문장, 출처가 불분명한 주장,
+내가 제대로 이해하지 못한 부분부터 먼저 짚어드립니다.`}
         </p>
 
         <div className="relative w-full max-w-[760px] overflow-hidden rounded-3xl border border-uready-gray-200 bg-white shadow-uready-md">
@@ -118,7 +106,7 @@ export function UploadScreen({
           <div className="grid grid-cols-1 md:grid-cols-2">
             <div className="border-b border-uready-gray-200 p-6 md:border-b-0 md:border-r">
               <label className="mb-2.5 block text-xs font-semibold uppercase tracking-wider text-uready-gray-500">
-                발표 대본 (TXT)
+                발표 대본
               </label>
               <textarea
                 value={draftText}
@@ -133,7 +121,7 @@ export function UploadScreen({
 
             <div className="flex flex-col gap-3 p-6">
               <span className="block text-xs font-semibold uppercase tracking-wider text-uready-gray-500">
-                프레젠테이션 자료 (PDF / TXT)
+                발표 자료
               </span>
               <input
                 ref={inputRef}
@@ -167,10 +155,11 @@ export function UploadScreen({
                   </span>
                 )}
                 <span className="text-[13px] font-medium text-uready-gray-500">
-                  {dropzoneLabel}
+                  파일 크기는 15MB 미만, 텍스트가 포함되어야 해요
                 </span>
-                <span className="text-[11px] text-uready-gray-400">
-                  클릭하거나 파일을 드래그하세요
+                <span className="text-[11px] leading-snug text-uready-gray-400">
+                  PDF나 TXT 파일을 넣으면 질문받을 수 있는 부분을 먼저
+                  짚어드립니다
                 </span>
               </button>
             </div>
@@ -182,23 +171,11 @@ export function UploadScreen({
                 disabled={busy}
                 className="mx-auto block w-full max-w-sm rounded-[10px] bg-primary py-3.5 text-[15px] font-bold tracking-tight text-primary-foreground transition-all hover:bg-primary-hover hover:shadow-[0_4px_16px_rgba(211,45,47,0.3)] active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
               >
-                즉시 분석 시작하기
+                내 발표에서 막힐 부분 찾기
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 border-t border-uready-gray-100 bg-uready-gray-50 px-6 py-3">
-            <span className="text-xs text-uready-gray-400">
-              지원 형식:{" "}
-              <span className="font-medium text-uready-gray-500">
-                텍스트(TXT) 직접 입력
-              </span>{" "}
-              ·{" "}
-              <span className="font-medium text-uready-gray-500">
-                PDF / TXT 업로드
-              </span>
-            </span>
-          </div>
         </div>
       </main>
     </div>
