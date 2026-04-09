@@ -535,7 +535,7 @@ export function ResultScreen({
   )
 
   const renderSingleSourceWithIssues = () => (
-    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start">
+    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2">
       <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
         {sectionTitle}
       </h3>
@@ -588,7 +588,7 @@ export function ResultScreen({
   )
 
   const renderDualSourceWithIssues = () => (
-    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start">
+    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2">
       <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
         {sectionTitle}
       </h3>
@@ -723,7 +723,7 @@ export function ResultScreen({
       <div
         className={cn(
           "mx-auto w-full max-w-[1100px] flex-1 px-4 py-10 pb-24 sm:px-6 sm:pb-28",
-          issues.length > 0 && "max-md:pb-36"
+          issues.length > 0 && "max-md:pb-36 md:pb-44 lg:pb-52"
         )}
       >
         <header className="mb-8">
@@ -796,18 +796,36 @@ export function ResultScreen({
         ) : null}
 
         {issues.length === 0 ? (
-          <div className="space-y-8">
-            {dual ? renderDualSourceEmpty() : renderSingleSourceEmpty()}
-            <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
-              눈에 띄는 허점이 발견되지 않았어요.
+          <>
+            <div className="space-y-8">
+              {dual ? renderDualSourceEmpty() : renderSingleSourceEmpty()}
+              <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
+                눈에 띄는 허점이 발견되지 않았어요.
+              </p>
+            </div>
+            <p
+              className={cn(
+                "border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm",
+                "mt-16 scroll-mt-8 pt-10 md:mt-24 md:pt-14",
+                "mb-10 md:mb-16 lg:mb-20"
+              )}
+            >
+              💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
+              결과를 저장해두세요.
             </p>
-          </div>
+          </>
         ) : (
-          <div className="grid grid-cols-1 gap-10 pb-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-12 md:pb-4">
+          <div
+            className={cn(
+              "isolate grid grid-cols-1 gap-x-0 gap-y-10 pb-6",
+              "md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-x-12 md:gap-y-12",
+              "md:pb-12 lg:pb-16"
+            )}
+          >
             {dual ? renderDualSourceWithIssues() : renderSingleSourceWithIssues()}
             <section
               className={cn(
-                "order-2 min-w-0",
+                "order-2 min-w-0 md:relative md:z-[1]",
                 "max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40"
               )}
             >
@@ -878,18 +896,18 @@ export function ResultScreen({
                 </ul>
               </div>
             </section>
+            <p
+              className={cn(
+                "col-span-1 border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm md:col-span-2",
+                "order-3 mt-0 w-full min-w-0 scroll-mt-8 pt-8 md:pt-12",
+                "relative z-[2] mb-10 md:mb-16 lg:mb-20"
+              )}
+            >
+              💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
+              결과를 저장해두세요.
+            </p>
           </div>
         )}
-
-        <p
-          className={cn(
-            "border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm",
-            "mt-16 scroll-mt-8 pt-10 md:mt-20 md:pt-12"
-          )}
-        >
-          💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
-          결과를 저장해두세요.
-        </p>
       </div>
 
       <div
