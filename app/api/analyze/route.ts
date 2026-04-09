@@ -17,8 +17,16 @@ import {
 } from "@/lib/uready/analysis-limits"
 
 export const runtime = "nodejs"
-/** Vercel: Pro에서 최대 300s까지. Hobby는 플랫폼 상한 10s라 긴 분석은 502가 날 수 있음. */
-export const maxDuration = 300
+
+const routeMaxSec = Number.parseInt(
+  process.env.ANALYZE_ROUTE_MAX_DURATION_SEC ?? "",
+  10
+)
+/** Vercel: Pro에서 최대 300s. Hobby는 플랫폼 상한 60s(코드가 300이어도 캡). 504 시 심층 점검 부하 축소 또는 Pro 권장. */
+export const maxDuration =
+  Number.isFinite(routeMaxSec) && routeMaxSec >= 10 && routeMaxSec <= 300
+    ? routeMaxSec
+    : 300
 
 const MAX_TEXT_CHARS = 500_000
 

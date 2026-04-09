@@ -52,6 +52,13 @@ export async function analyzePresentationText(
         ? o.error
         : "분석 요청에 실패했습니다."
     if (
+      (res.status === 504 || res.status === 502) &&
+      !(typeof o.error === "string" && o.error.trim().length > 0)
+    ) {
+      base =
+        "서버 응답 시간이 초과되었습니다. Vercel 무료 플랜은 함수당 약 60초 한도이며, 심층 점검·긴 문서는 초과할 수 있습니다. 심층 점검을 끄고 다시 시도하거나 문서를 짧게 하거나, Vercel Pro(최대 300초)를 검토해 주세요."
+    }
+    if (
       res.status === 503 &&
       base === "분석 요청에 실패했습니다."
     ) {

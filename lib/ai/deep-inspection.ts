@@ -104,21 +104,32 @@ ${JSON.stringify(agent1Json).slice(0, 120_000)}
 }
 
 function getDeepGenerateMaxSteps(): number {
+  const deepRaw = process.env.DEEP_INSPECTION_GENERATE_MAX_STEPS?.trim()
+  if (deepRaw) {
+    const n = Number.parseInt(deepRaw, 10)
+    if (Number.isFinite(n) && n >= 8 && n <= 64) return n
+  }
   const raw = process.env.ANALYSIS_GENERATE_MAX_STEPS?.trim()
   if (raw) {
     const n = Number.parseInt(raw, 10)
     if (Number.isFinite(n) && n >= 8 && n <= 64) return n
   }
-  return 40
+  /** 기본 16: Vercel Hobby ~60s 한도에서 504를 줄이기 위해 단일 경로(40)보다 짧게 */
+  return 16
 }
 
 function getDeepMaxSearchToolCalls(): number {
+  const deepRaw = process.env.DEEP_INSPECTION_MAX_SEARCH_QUERIES?.trim()
+  if (deepRaw) {
+    const n = Number.parseInt(deepRaw, 10)
+    if (Number.isFinite(n) && n >= 1 && n <= 20) return n
+  }
   const raw = process.env.ANALYSIS_MAX_SEARCH_QUERIES?.trim()
   if (raw) {
     const n = Number.parseInt(raw, 10)
     if (Number.isFinite(n) && n >= 1 && n <= 20) return n
   }
-  return 8
+  return 4
 }
 
 function countToolCallsInSteps(
