@@ -347,6 +347,79 @@ ${JSON.stringify(agent1)}
   })
 }
 
+async function tryRepairAgent2Blob(
+  modelId: string,
+  blob: string
+): Promise<unknown | null> {
+  const t = blob.trim()
+  if (t.length < 4) return null
+  try {
+    return await repairJsonWithModel(modelId, t, "2단계 팩트체크")
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 2단계: 파싱 → (실패 시) 복구 모델 → (여전히 실패·빈 출력) 검색 없는 폴백 → Agent 1만 넣은 합성 프롬프트로 복구·재생성.
+ * 빈 `collectAnalysisTextCandidates`만으로는 절대 멈추지 않도록 함.
+ */
+async function parseAgent2JsonWithResilience(
+  modelId: string,
+  agent2Result: Parameters<typeof parseJsonFromGenerateResult>[0],
+  agent1: z.infer<typeof agent1Shape>,
+  userFocusNotes?: string | null,
+  dualSourceMode?: boolean
+): Promise<unknown> {
+  try {
+    return parseJsonFromGenerateResult(agent2Result)
+  } catch {
+    const blob = collectAnalysisTextCandidates(agent2Result).join("\n\n")
+    const repaired = await tryRepairAgent2Blob(modelId, blob)
+    if (repaired != null) return repaired
+
+    const fallback = await generateAgent2JsonWithoutSearchFallback(
+      modelId,
+      agent1,
+      userFocusNotes,
+      dualSourceMode
+    )
+    try {
+      return parseJsonFromGenerateResult(fallback)
+    } catch {
+      const fbBlob = collectAnalysisTextCandidates(fallback).join("\n\n")
+      const repaired2 = await tryRepairAgent2Blob(modelId, fbBlob)
+      if (repaired2 != null) return repaired2
+    }
+
+    const synthetic = `Agent 1 JSON만 주어집니다. globalContext·extractedStatements는 유지하고 각 항목에 evidence·sourceReliability를 채운 **순수 JSON 한 객체**만 출력하세요.\n\n${JSON.stringify(agent1).slice(0, 120_000)}`
+    const repaired3 = await tryRepairAgent2Blob(modelId, synthetic)
+    if (repaired3 != null) return repaired3
+
+    const lastResort = await generateText({
+      ...geminiAnalysisExtras(),
+      model: google(modelId),
+      stopWhen: stepCountIs(1),
+      system: `${DEEP_AGENT2_FACT_CHECKER}
+
+## 이번 턴 (최종 복구)
+Google Search·도구는 사용하지 마세요. 아래 Agent 1만으로 요구 스키마의 JSON을 완성하세요.`,
+      prompt: synthetic,
+      maxOutputTokens: 24_576,
+    })
+    try {
+      return parseJsonFromGenerateResult(lastResort)
+    } catch {
+      const lrBlob = collectAnalysisTextCandidates(lastResort).join("\n\n")
+      const repaired4 = await tryRepairAgent2Blob(modelId, lrBlob)
+      if (repaired4 != null) return repaired4
+    }
+    throw new Error(
+      "심층 점검(2단계 팩트체크): 여러 복구 시도 후에도 JSON을 얻지 못했습니다."
+    )
+  }
+}
+
 export type DeepInspectionOptions = {
   userFocusNotes?: string | null
   dualSourceMode?: boolean
@@ -413,27 +486,18 @@ ${JSON.stringify(agent1)}
     maxOutputTokens: 24_576,
   })
 
-  let agent2ForParse = await finalizeAgent2FactCheckJson(
+  const agent2ForParse = await finalizeAgent2FactCheckJson(
     modelId,
     agent2Raw,
     agent1
   )
-  const agent2Blob = collectAnalysisTextCandidates(agent2ForParse)
-    .join("\n\n")
-    .trim()
-  if (agent2Blob.length < 4) {
-    agent2ForParse = await generateAgent2JsonWithoutSearchFallback(
-      modelId,
-      agent1,
-      options.userFocusNotes,
-      options.dualSourceMode
-    )
-  }
 
-  const j2 = await parseJsonFromGenerateResultOrRepair(
-    agent2ForParse,
+  const j2 = await parseAgent2JsonWithResilience(
     modelId,
-    "2단계 팩트체크"
+    agent2ForParse,
+    agent1,
+    options.userFocusNotes,
+    options.dualSourceMode
   )
   const agent2Grounding = collectGroundingSteps(agent2Raw.steps)
 
