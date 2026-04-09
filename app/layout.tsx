@@ -73,11 +73,13 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: MAZE_UNIVERSAL_SNIPPET }}
         />
-        <Script
-          id="microsoft-clarity"
-          strategy="afterInteractive"
-          dangerouslySetInnerHTML={{ __html: MS_CLARITY_BOOTSTRAP }}
-        />
+        {process.env.NODE_ENV === "production" ? (
+          <Script
+            id="microsoft-clarity"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{ __html: MS_CLARITY_BOOTSTRAP }}
+          />
+        ) : null}
         {children}
         <AppLegalFooter />
         <Analytics />

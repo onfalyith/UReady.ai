@@ -65,6 +65,68 @@ function countToolCallsInSteps(
   return n
 }
 
+/** 문자열 안의 `{` `}` 는 무시하지 않고, 이스케이프된 `"` 만 고려한 단순 스캔으로 첫 번째 최상위 JSON 객체 구간을 잘라냅니다. */
+function extractBalancedJsonObject(s: string): string | null {
+  const start = s.indexOf("{")
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i]!
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (inString) {
+      if (ch === "\\") {
+        escape = true
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === "{") depth++
+    else if (ch === "}") {
+      depth--
+      if (depth === 0) return s.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+function tryParseJsonChunk(chunk: string): unknown | null {
+  const trimmed = chunk.trim()
+  if (!trimmed) return null
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const inner0 = fenced ? fenced[1].trim() : trimmed
+  try {
+    return parseJsonFromModelBlock(inner0)
+  } catch {
+    const obj = extractBalancedJsonObject(inner0)
+    if (obj) {
+      try {
+        return JSON.parse(obj) as unknown
+      } catch {
+        /* fall through */
+      }
+    }
+    const obj2 = extractBalancedJsonObject(trimmed)
+    if (obj2) {
+      try {
+        return JSON.parse(obj2) as unknown
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  return null
+}
+
 function parseJsonFromGenerateResult(result: {
   text: string
   reasoningText?: string | undefined
@@ -76,20 +138,61 @@ function parseJsonFromGenerateResult(result: {
   response: { messages?: ReadonlyArray<{ role?: string; content?: unknown }> }
 }): unknown {
   const candidates = collectAnalysisTextCandidates(result)
-  let lastErr: unknown
   for (const c of candidates) {
-    try {
-      const trimmed = c.trim()
-      const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
-      const inner = fenced ? fenced[1].trim() : trimmed
-      return parseJsonFromModelBlock(inner)
-    } catch (e) {
-      lastErr = e
-    }
+    const p = tryParseJsonChunk(c)
+    if (p != null) return p
   }
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error("심층 점검: 모델 응답에서 JSON을 파싱하지 못했습니다.")
+  const joined = candidates.join("\n\n")
+  const p2 = tryParseJsonChunk(joined)
+  if (p2 != null) return p2
+  throw new Error("심층 점검: 모델 응답에서 JSON을 파싱하지 못했습니다.")
+}
+
+const REPAIR_JSON_SYSTEM = `You repair and extract JSON only.
+Rules:
+- Output a single valid JSON value (object or array). No markdown, no code fences, no text before or after.
+- If the input contains a JSON object with minor issues (trailing commas, truncated end), fix what you can.
+- If multiple JSON objects appear, return the main one that matches the described role (globalContext, extractedStatements, issues, etc.).`
+
+async function repairJsonWithModel(
+  modelId: string,
+  rawBlob: string,
+  phaseLabel: string
+): Promise<unknown> {
+  const trimmed = rawBlob.trim().slice(0, 32_000)
+  if (trimmed.length < 4) {
+    throw new Error(
+      `심층 점검(${phaseLabel}): 모델 출력이 비어 있어 JSON을 복구할 수 없습니다.`
+    )
+  }
+  const repairResult = await generateText({
+    ...geminiAnalysisExtras(),
+    model: google(modelId),
+    stopWhen: stepCountIs(1),
+    system: REPAIR_JSON_SYSTEM,
+    prompt: `다음은 이전 단계 모델 출력입니다. 요구된 JSON 한 덩어리만 남기세요.\n\n---\n${trimmed}\n---`,
+    maxOutputTokens: 24_576,
+  })
+  try {
+    return parseJsonFromGenerateResult(repairResult)
+  } catch {
+    throw new Error(
+      `심층 점검(${phaseLabel}): JSON 자동 복구에도 실패했습니다. 잠시 후 다시 시도해 주세요.`
+    )
+  }
+}
+
+async function parseJsonFromGenerateResultOrRepair(
+  result: Parameters<typeof parseJsonFromGenerateResult>[0],
+  modelId: string,
+  phaseLabel: string
+): Promise<unknown> {
+  try {
+    return parseJsonFromGenerateResult(result)
+  } catch {
+    const blob = collectAnalysisTextCandidates(result).join("\n\n")
+    return repairJsonWithModel(modelId, blob, phaseLabel)
+  }
 }
 
 function buildDeepUserMaterialBlock(
@@ -169,7 +272,11 @@ export async function runDeepInspectionPipeline(
     maxOutputTokens: 16_384,
   })
 
-  const j1 = parseJsonFromGenerateResult(agent1Result)
+  const j1 = await parseJsonFromGenerateResultOrRepair(
+    agent1Result,
+    modelId,
+    "1단계 맥락·발췌"
+  )
   const agent1 = agent1Shape.parse(j1)
 
   const agent2Prompt = `${analysisContextOnly(options.userFocusNotes, options.dualSourceMode === true)}
@@ -197,7 +304,11 @@ ${JSON.stringify(agent1)}
     maxOutputTokens: 24_576,
   })
 
-  const j2 = parseJsonFromGenerateResult(agent2Result)
+  const j2 = await parseJsonFromGenerateResultOrRepair(
+    agent2Result,
+    modelId,
+    "2단계 팩트체크"
+  )
   const agent2Grounding = collectGroundingSteps(agent2Result.steps)
 
   const agent3Prompt = `${analysisContextOnly(options.userFocusNotes, options.dualSourceMode === true)}
@@ -215,10 +326,12 @@ ${JSON.stringify(j2)}
     maxOutputTokens: 24_576,
   })
 
-  const j3raw = parseJsonFromGenerateResult(agent3Result) as Record<
-    string,
-    unknown
-  >
+  const j3parsed = await parseJsonFromGenerateResultOrRepair(
+    agent3Result,
+    modelId,
+    "3단계 소크라테스 초안"
+  )
+  const j3raw = j3parsed as Record<string, unknown>
   if (
     j3raw &&
     !Array.isArray(j3raw.draftIssues) &&
@@ -244,7 +357,11 @@ ${JSON.stringify(j3)}
     maxOutputTokens: 24_576,
   })
 
-  const j4 = parseJsonFromGenerateResult(agent4Result)
+  const j4 = await parseJsonFromGenerateResultOrRepair(
+    agent4Result,
+    modelId,
+    "4단계 최종 통합"
+  )
   const analysis: PresentationAnalysis = presentationAnalysisSchema.parse(j4)
 
   const materialMeta: AnalysisMaterialMeta = {
