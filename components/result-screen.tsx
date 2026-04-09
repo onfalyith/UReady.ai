@@ -537,7 +537,7 @@ export function ResultScreen({
     <section
       className={cn(
         "order-1 min-w-0 w-full max-w-full",
-        "md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2",
+        "md:sticky md:top-[104px] md:max-h-[calc(100vh-8.5rem)] md:self-start md:pb-2",
         "md:flex md:flex-col md:overflow-hidden"
       )}
     >
@@ -608,7 +608,7 @@ export function ResultScreen({
     <section
       className={cn(
         "order-1 min-w-0 w-full max-w-full",
-        "md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2",
+        "md:sticky md:top-[104px] md:max-h-[calc(100vh-8.5rem)] md:self-start md:pb-2",
         "md:flex md:flex-col md:overflow-hidden"
       )}
     >
@@ -726,7 +726,7 @@ export function ResultScreen({
         }
       />
 
-      <div className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-uready-gray-200 bg-white px-4 sm:px-8">
+      <div className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-uready-gray-200 bg-white px-4 sm:px-8 md:sticky md:top-[52px] md:z-[90]">
         <div className="flex items-center gap-1.5 text-[13px] text-uready-gray-500">
           <svg
             width="14"
@@ -843,13 +843,13 @@ export function ResultScreen({
           </div>
         ) : (
           <div className="flex flex-col">
-            {/* 허점 ◀▶: 원문·점검과 형제로 두어 sticky 부모가 길고, md+에서는 SharedNav(52px) 바로 아래에만 고정(화면 하단 고정 없음) */}
+            {/* 허점 ◀▶: md+에서 파일명 줄(52px)이 SharedNav(52px) 아래에 붙은 뒤, 네비는 그 아래(top 104px)에 고정 */}
             <div className="flex min-h-0 w-full min-w-0 max-w-full flex-col gap-y-10 md:gap-y-12">
               <div
                 className={cn(
                   "min-w-0 w-full max-w-full shrink-0",
                   "rounded-xl border border-uready-gray-200 bg-uready-gray-50/90 px-3 py-2.5 backdrop-blur-sm sm:px-4",
-                  "md:sticky md:top-[52px] md:z-20 md:py-3"
+                  "md:sticky md:top-[104px] md:z-20 md:py-3"
                 )}
               >
                 <IssueNavigatorRow

@@ -125,7 +125,7 @@ export const PdfPagesPanel = forwardRef<
       if (!issue) return
       const pageIdx = findPageIndexForIssueQuote(pageTexts, issue.originalText)
       const el = pageWrapRefs.current[pageIdx]
-      el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      el?.scrollIntoView({ behavior: "smooth", block: "start" })
     },
     [issues, pageTexts]
   )

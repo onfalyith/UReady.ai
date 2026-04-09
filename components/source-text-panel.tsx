@@ -66,7 +66,7 @@ export const SourceTextPanel = forwardRef<
       if (refs.includes(issueIndex)) {
         btn.scrollIntoView({
           behavior: "smooth",
-          block: "nearest",
+          block: "start",
           inline: "nearest",
         })
         return

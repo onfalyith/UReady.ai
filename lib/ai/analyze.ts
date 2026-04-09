@@ -423,7 +423,12 @@ function extractAllTextFromMessageContent(content: unknown): string[] {
       } else if (typeof op === "object") {
         try {
           const s = JSON.stringify(op)
-          if (s.length < 12_000 && /issues|text|snippet/i.test(s)) {
+          if (
+            s.length < 12_000 &&
+            /issues|text|snippet|extractedStatements|globalContext|evidence|sourceReliability|draftIssues/i.test(
+              s
+            )
+          ) {
             out.push(s)
           }
         } catch {

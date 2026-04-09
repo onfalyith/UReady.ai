@@ -1,6 +1,6 @@
 import "server-only"
 
-import { generateText, stepCountIs } from "ai"
+import { generateText, stepCountIs, type ModelMessage } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import {
@@ -35,6 +35,72 @@ import {
 function geminiAnalysisExtras() {
   const o = getGeminiAnalysisProviderOptions()
   return o ? { providerOptions: o } : {}
+}
+
+/** 마지막 스텝이 도구만 호출하고 assistant 텍스트가 비어 `text` 후보가 사라지는 경우 */
+function lastStepWasToolCallsOnly(result: {
+  steps: ReadonlyArray<{ toolCalls?: ReadonlyArray<unknown>; text?: string }>
+}): boolean {
+  const last = result.steps[result.steps.length - 1]
+  if (!last) return false
+  const calls = last.toolCalls?.length ?? 0
+  return calls > 0 && !String(last.text ?? "").trim()
+}
+
+/**
+ * Agent2(검색 팩트체크)는 다단계 도구 호출 후 마지막 턴에 JSON이 비어 있거나
+ * 마지막 스텝만 검색으로 끝나 후보 문자열이 없을 수 있음 → 대화 이어서 JSON만 생성.
+ */
+type AnyGenerateTextResult = Awaited<ReturnType<typeof generateText<any>>>
+
+async function finalizeAgent2FactCheckJson(
+  modelId: string,
+  agent2Result: AnyGenerateTextResult,
+  agent1Json: z.infer<typeof agent1Shape>
+): Promise<AnyGenerateTextResult> {
+  const notes = collectAnalysisTextCandidates(agent2Result).join("\n\n")
+  const needFollowUp =
+    !notes.trim() ||
+    lastStepWasToolCallsOnly(agent2Result) ||
+    agent2Result.finishReason === "length" ||
+    (agent2Result.finishReason === "content-filter" && !notes.trim())
+
+  if (!needFollowUp) return agent2Result
+
+  const msgs = agent2Result.response.messages
+  if (!msgs?.length) return agent2Result
+
+  try {
+    const cont = await generateText({
+      ...geminiAnalysisExtras(),
+      model: google(modelId),
+      messages: [
+        ...(msgs as ModelMessage[]),
+        {
+          role: "user",
+          content: `이전 Google Search로 수집한 근거만 사용하세요. 새 검색·도구 호출은 하지 마세요.
+
+Agent 1 출력(참고, 동일 스키마로 evidence·sourceReliability만 채우면 됨):
+${JSON.stringify(agent1Json).slice(0, 120_000)}
+
+위 대화의 검색 결과와 Agent 1을 반영해 **순수 JSON 한 객체**만 출력하세요. 마크다운·코드펜스 금지.`,
+        },
+      ],
+      system: `${DEEP_AGENT2_FACT_CHECKER}
+
+## 이번 턴
+도구를 호출하지 마세요. 이미 수행된 검색 근거만 사용해 JSON만 출력하세요.`,
+      stopWhen: stepCountIs(1),
+      maxOutputTokens: 24_576,
+    })
+    const contNotes = collectAnalysisTextCandidates(cont).join("\n\n")
+    if (contNotes.trim().length > notes.trim().length) {
+      return cont
+    }
+  } catch {
+    /* 원본으로 파싱·복구 시도 */
+  }
+  return agent2Result
 }
 
 function getDeepGenerateMaxSteps(): number {
@@ -285,7 +351,7 @@ ${JSON.stringify(agent1)}
 
 위 JSON에 evidence·sourceReliability를 채워 동일 스키마 규칙으로 **순수 JSON 한 객체**만 출력하세요.`
 
-  const agent2Result = await generateText({
+  const agent2Raw = await generateText({
     ...geminiAnalysisExtras(),
     model: google(modelId),
     stopWhen: stepCountIs(maxSteps),
@@ -304,12 +370,18 @@ ${JSON.stringify(agent1)}
     maxOutputTokens: 24_576,
   })
 
+  const agent2Result = await finalizeAgent2FactCheckJson(
+    modelId,
+    agent2Raw,
+    agent1
+  )
+
   const j2 = await parseJsonFromGenerateResultOrRepair(
     agent2Result,
     modelId,
     "2단계 팩트체크"
   )
-  const agent2Grounding = collectGroundingSteps(agent2Result.steps)
+  const agent2Grounding = collectGroundingSteps(agent2Raw.steps)
 
   const agent3Prompt = `${analysisContextOnly(options.userFocusNotes, options.dualSourceMode === true)}
 ## Agent 2 출력 JSON

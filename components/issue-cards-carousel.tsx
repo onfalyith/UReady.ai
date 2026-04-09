@@ -26,6 +26,11 @@ export type IssueCardsCarouselProps = {
 
 const SWIPE_THRESHOLD_PX = 56
 
+function isNarrowTouchCarousel(): boolean {
+  if (typeof window === "undefined") return false
+  return window.matchMedia("(max-width: 767px)").matches
+}
+
 export function IssueCardsCarousel({
   issues,
   activeIssueIndex,
@@ -44,6 +49,7 @@ export function IssueCardsCarousel({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isNarrowTouchCarousel()) return
       if (e.button !== 0) return
       const el = e.target as HTMLElement
       if (el.closest("a, button, input, textarea, select, [role='tab']")) {
@@ -59,6 +65,19 @@ export function IssueCardsCarousel({
   const finishPointer = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (startX.current == null) return
+      if (!isNarrowTouchCarousel()) {
+        startX.current = null
+        const pid = pointerIdRef.current
+        pointerIdRef.current = null
+        if (pid != null) {
+          try {
+            e.currentTarget.releasePointerCapture(pid)
+          } catch {
+            /* already released */
+          }
+        }
+        return
+      }
       if (issues.length >= 2) {
         const dx = e.clientX - startX.current
         if (dx > SWIPE_THRESHOLD_PX) onNavigateIssue(-1)
@@ -110,7 +129,7 @@ export function IssueCardsCarousel({
     >
       <div
         className={cn(
-          "touch-pan-y cursor-grab active:cursor-grabbing",
+          "touch-pan-y max-md:cursor-grab max-md:active:cursor-grabbing md:cursor-default md:touch-auto",
           slideScrollClassName
         )}
         onPointerDown={onPointerDown}
