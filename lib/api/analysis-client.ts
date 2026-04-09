@@ -39,7 +39,17 @@ export async function analyzePresentationText(
     }),
   })
 
-  const raw: unknown = await res.json().catch(() => ({}))
+  const bodyText = await res.text()
+  let raw: unknown = {}
+  if (bodyText.trim()) {
+    try {
+      raw = JSON.parse(bodyText) as unknown
+    } catch {
+      raw = {
+        error: `서버가 JSON이 아닌 응답을 돌려줬습니다. (${bodyText.slice(0, 280)}${bodyText.length > 280 ? "…" : ""})`,
+      }
+    }
+  }
 
   if (!res.ok) {
     const o = raw as {
@@ -51,6 +61,10 @@ export async function analyzePresentationText(
       typeof o.error === "string"
         ? o.error
         : "분석 요청에 실패했습니다."
+    const codeStr =
+      typeof o.code === "string" && o.code.trim().length > 0
+        ? ` (${o.code})`
+        : ""
     if (
       (res.status === 504 || res.status === 502) &&
       !(typeof o.error === "string" && o.error.trim().length > 0)
@@ -69,7 +83,7 @@ export async function analyzePresentationText(
       typeof o.retryAfterSeconds === "number" && o.retryAfterSeconds > 0
         ? ` (약 ${o.retryAfterSeconds}초 후 재시도 가능)`
         : ""
-    return { ok: false, message: base + retry }
+    return { ok: false, message: base + codeStr + retry }
   }
 
   const obj = isRecord(raw) ? raw : {}

@@ -94,7 +94,10 @@ ${JSON.stringify(agent1Json).slice(0, 120_000)}
       maxOutputTokens: 24_576,
     })
     const contNotes = collectAnalysisTextCandidates(cont).join("\n\n")
-    if (contNotes.trim().length > notes.trim().length) {
+    const ct = contNotes.trim()
+    const nt = notes.trim()
+    /** follow-up은 JSON 보강용이므로, 한 글자라도 나오면 우선 채택 */
+    if (ct.length > 0 && (ct.length >= nt.length || nt.length === 0)) {
       return cont
     }
   } catch {
@@ -315,6 +318,35 @@ const agent1Shape = z.object({
   ),
 })
 
+/**
+ * 검색 단계에서 assistant 텍스트가 전혀 남지 않거나 messages가 비어 follow-up도 못 할 때:
+ * 도구 없이 Agent 1 JSON만으로 evidence·sourceReliability를 채운 JSON을 한 번 더 생성.
+ */
+async function generateAgent2JsonWithoutSearchFallback(
+  modelId: string,
+  agent1: z.infer<typeof agent1Shape>,
+  userFocusNotes?: string | null,
+  dualSourceMode?: boolean
+): Promise<AnyGenerateTextResult> {
+  const ctx = analysisContextOnly(userFocusNotes, dualSourceMode === true)
+  return generateText({
+    ...geminiAnalysisExtras(),
+    model: google(modelId),
+    stopWhen: stepCountIs(1),
+    system: `${DEEP_AGENT2_FACT_CHECKER}
+
+## 이번 턴 (폴백)
+이전 검색 단계에서 모델 텍스트를 수집하지 못했습니다. Google Search·도구는 사용하지 마세요.
+Agent 1의 globalContext·extractedStatements만 근거로 동일 JSON 스키마에 evidence·sourceReliability를 채우세요.
+외부 URL을 확정할 수 없으면 stance·snippet을 근거 부족에 맞게 쓰고 url은 비워도 됩니다.`,
+    prompt: `${ctx}## Agent 1 출력 JSON
+${JSON.stringify(agent1)}
+
+위와 같은 키 구조의 **순수 JSON 한 객체**만 출력하세요.`,
+    maxOutputTokens: 24_576,
+  })
+}
+
 export type DeepInspectionOptions = {
   userFocusNotes?: string | null
   dualSourceMode?: boolean
@@ -381,14 +413,25 @@ ${JSON.stringify(agent1)}
     maxOutputTokens: 24_576,
   })
 
-  const agent2Result = await finalizeAgent2FactCheckJson(
+  let agent2ForParse = await finalizeAgent2FactCheckJson(
     modelId,
     agent2Raw,
     agent1
   )
+  const agent2Blob = collectAnalysisTextCandidates(agent2ForParse)
+    .join("\n\n")
+    .trim()
+  if (agent2Blob.length < 4) {
+    agent2ForParse = await generateAgent2JsonWithoutSearchFallback(
+      modelId,
+      agent1,
+      options.userFocusNotes,
+      options.dualSourceMode
+    )
+  }
 
   const j2 = await parseJsonFromGenerateResultOrRepair(
-    agent2Result,
+    agent2ForParse,
     modelId,
     "2단계 팩트체크"
   )
