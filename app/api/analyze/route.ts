@@ -17,16 +17,8 @@ import {
 } from "@/lib/uready/analysis-limits"
 
 export const runtime = "nodejs"
-
-const routeMaxSec = Number.parseInt(
-  process.env.ANALYZE_ROUTE_MAX_DURATION_SEC ?? "",
-  10
-)
-/** Vercel: Pro에서 최대 300s. Hobby는 플랫폼 상한 60s(코드가 300이어도 캡). 504 시 심층 점검 부하 축소 또는 Pro 권장. */
-export const maxDuration =
-  Number.isFinite(routeMaxSec) && routeMaxSec >= 10 && routeMaxSec <= 300
-    ? routeMaxSec
-    : 300
+/** Vercel: Pro 최대 300s. Hobby는 플랫폼 상한 60s. Next.js는 리터럴이어야 해서 env로 바꾸지 않음 — 대시보드에서 함수 시간 조정 가능. */
+export const maxDuration = 300
 
 const MAX_TEXT_CHARS = 500_000
 
