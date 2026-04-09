@@ -30,6 +30,7 @@ export function createInitialUReadyState(): UReadyAppState {
     analysisMaterialMeta: null,
     analysisError: null,
     extractingDocument: false,
+    deepInspectionMode: false,
   }
 }
 

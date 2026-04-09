@@ -14,6 +14,7 @@ import { pageTextFromContent } from "@/lib/client/pdf-page-text"
 import { findPageIndexForIssueQuote } from "@/lib/uready/build-source-segments"
 import type { PresentationIssue } from "@/types/analysis"
 import type { SourceTextPanelHandle } from "@/components/source-text-panel"
+import { cn } from "@/lib/utils"
 
 /** 패널 미리보기: 한 페이지가 차지하는 CSS 최대 너비(px) */
 const PDF_PANEL_MAX_CSS_WIDTH = 560
@@ -39,6 +40,8 @@ type PdfPagesPanelProps = {
   showIssueNavigator?: boolean
   /** 페이지별 추출 텍스트 준비 시(허점 카드 p.n 등) */
   onPageTextsReady?: (pageTexts: string[]) => void
+  /** 결과 화면 스티키 열 등에서 남는 높이를 채움(md 이상). 모바일은 기존 max-height 유지 */
+  fillAvailableHeight?: boolean
 }
 
 export const PdfPagesPanel = forwardRef<
@@ -53,6 +56,7 @@ export const PdfPagesPanel = forwardRef<
     onNavigateIssue,
     showIssueNavigator = true,
     onPageTextsReady,
+    fillAvailableHeight = false,
   },
   ref
 ) {
@@ -145,7 +149,14 @@ export const PdfPagesPanel = forwardRef<
   }
 
   return (
-    <div className="flex max-h-[min(55vh,520px)] flex-col overflow-hidden rounded-2xl border border-uready-gray-200 bg-uready-gray-50/80 md:max-h-[min(520px,calc(100vh-11rem))]">
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden rounded-2xl border border-uready-gray-200 bg-uready-gray-50/80",
+        fillAvailableHeight
+          ? "min-h-0 max-h-[min(55vh,520px)] md:h-full md:max-h-none md:flex-1"
+          : "max-h-[min(55vh,520px)] md:max-h-[min(520px,calc(100vh-11rem))]"
+      )}
+    >
       {nIssues > 0 && showIssueNavigator ? (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-uready-gray-200/80 px-3 py-2.5 sm:gap-3 sm:px-5">
           <button

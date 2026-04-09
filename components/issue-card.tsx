@@ -63,6 +63,8 @@ type IssueCardProps = {
   dualMaterialPage?: number | null
   /** 카드 본문 클릭 시 원문 하이라이트로 스크롤(링크·내부 버튼 제외) */
   onActivate?: (index: number) => void
+  /** 캐러셀 등에서는 article 권장 */
+  as?: "li" | "article"
 }
 
 export function IssueCard({
@@ -74,6 +76,7 @@ export function IssueCard({
   dualScriptSentence = null,
   dualMaterialPage = null,
   onActivate,
+  as = "article",
 }: IssueCardProps) {
   const trustNotice =
     usedNoToolFallback ? null : sourceTrustNotice(issue.sourceReliability)
@@ -90,8 +93,10 @@ export function IssueCard({
     dualHasResolvedMaterial ||
     dualLocationModelNote.length > 0
 
+  const Outer = as === "li" ? "li" : "article"
+
   return (
-    <li
+    <Outer
       id={`uready-issue-${index}`}
       className={`scroll-mt-28 overflow-hidden rounded-2xl border border-uready-gray-200 bg-white shadow-uready-sm transition-shadow duration-300 ${
         onActivate ? "cursor-pointer" : ""
@@ -228,6 +233,6 @@ export function IssueCard({
           <EvidenceList items={substantiveEvidence} />
         ) : null}
       </div>
-    </li>
+    </Outer>
   )
 }

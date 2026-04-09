@@ -51,6 +51,9 @@ function normalizeStance(raw: unknown): EvidenceStance {
   if (t === "insufficient" || t === "insufficient_evidence") {
     return "근거 부족"
   }
+  if (t === "confirmed evidence") return "근거 확인"
+  if (t === "different evidence") return "근거 다름"
+  if (t === "lack of evidence") return "근거 부족"
   return "근거 부족"
 }
 
@@ -273,6 +276,8 @@ export const materialMetaSchema = z.object({
   chunkCount: z.number().int().positive().optional(),
   /** 검색 그라운딩 본문 없음 등으로 도구 없는 폴백 분석을 쓴 경우 */
   usedNoToolFallback: z.boolean().optional(),
+  /** 심층 점검 모드: 4에이전트 순차 파이프라인 */
+  usedDeepInspection: z.boolean().optional(),
 })
 
 export type AnalysisMaterialMeta = z.infer<typeof materialMetaSchema>

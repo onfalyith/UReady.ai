@@ -9,6 +9,9 @@ type UploadScreenProps = {
   textareaDraft: string
   selectedFile: File | null
   extractingDocument: boolean
+  /** 심층 점검(4단계 파이프라인) */
+  deepInspectionMode: boolean
+  onDeepInspectionModeChange: (value: boolean) => void
   /** `/api/analyze` 실패 시 표시 */
   analysisError?: string | null
   onDismissAnalysisError?: () => void
@@ -22,6 +25,8 @@ export function UploadScreen({
   textareaDraft,
   selectedFile,
   extractingDocument,
+  deepInspectionMode,
+  onDeepInspectionModeChange,
   analysisError,
   onDismissAnalysisError,
   onTextareaChange,
@@ -193,7 +198,27 @@ export function UploadScreen({
               </button>
             </div>
 
-            <div className="col-span-1 border-t border-uready-gray-200 px-6 pb-6 pt-4 md:col-span-2">
+            <div className="col-span-1 space-y-3 border-t border-uready-gray-200 px-6 pb-6 pt-4 md:col-span-2">
+              <label className="flex cursor-pointer items-start gap-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={deepInspectionMode}
+                  disabled={busy}
+                  onChange={(e) =>
+                    onDeepInspectionModeChange(e.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-uready-gray-300 text-primary focus:ring-primary"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-uready-gray-800">
+                    심층 점검 모드
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-uready-gray-500">
+                    해당 모드 체크 시 보다 정교한 분석이 진행되며, 소요시간이
+                    길어질 수 있습니다.(유료 예정 기능)
+                  </span>
+                </span>
+              </label>
               <button
                 type="button"
                 onClick={onStart}

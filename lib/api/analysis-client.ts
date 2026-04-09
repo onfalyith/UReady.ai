@@ -11,7 +11,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 export async function analyzePresentationText(
   text: string,
-  opts?: { userFocusNotes?: string; dualSourceMode?: boolean }
+  opts?: {
+    userFocusNotes?: string
+    dualSourceMode?: boolean
+    deepInspectionMode?: boolean
+  }
 ): Promise<
   | {
       ok: true
@@ -29,6 +33,9 @@ export async function analyzePresentationText(
       text,
       ...(focus ? { userFocusNotes: focus } : {}),
       ...(dual ? { dualSourceMode: true } : {}),
+      ...(opts?.deepInspectionMode === true
+        ? { deepInspectionMode: true }
+        : {}),
     }),
   })
 

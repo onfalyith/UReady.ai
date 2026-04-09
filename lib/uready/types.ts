@@ -51,4 +51,6 @@ export type UReadyAppState = {
   analysisError: string | null
   /** PDF 서버 추출 중 (업로드 화면) */
   extractingDocument: boolean
+  /** 심층 점검 모드(4단계 파이프라인) */
+  deepInspectionMode: boolean
 }

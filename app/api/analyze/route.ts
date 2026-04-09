@@ -31,6 +31,8 @@ const bodySchema = z.object({
   userFocusNotes: z.string().max(12_000).optional(),
   /** 발표 대본 + 발표 자료 동시 제출 — 통합·교차 검토 프롬프트 */
   dualSourceMode: z.boolean().optional(),
+  /** 4단계 심층 점검 파이프라인 */
+  deepInspectionMode: z.boolean().optional(),
 })
 
 export async function POST(request: Request) {
@@ -59,7 +61,8 @@ export async function POST(request: Request) {
     return Response.json({ error: msg }, { status: 400 })
   }
 
-  const { text, userFocusNotes, dualSourceMode } = parsed.data
+  const { text, userFocusNotes, dualSourceMode, deepInspectionMode } =
+    parsed.data
   const trimmed = text.trim()
   const focusTrimmed = userFocusNotes?.trim()
 
@@ -78,6 +81,7 @@ export async function POST(request: Request) {
       await runPresentationAnalysis(trimmed, {
         ...(focusTrimmed ? { userFocusNotes: focusTrimmed } : {}),
         ...(dualSourceMode === true ? { dualSourceMode: true } : {}),
+        ...(deepInspectionMode === true ? { deepInspectionMode: true } : {}),
       })
 
     const metaValidated = materialMetaSchema.parse(materialMeta)

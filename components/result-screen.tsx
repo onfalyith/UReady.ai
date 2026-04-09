@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PdfPagesPanel } from "@/components/pdf-pages-panel"
 import { SharedNav } from "@/components/uready/shared-nav"
-import { IssueCard } from "@/components/issue-card"
+import { IssueCardsCarousel } from "@/components/issue-cards-carousel"
 import {
   SourceTextPanel,
   type SourceTextPanelHandle,
@@ -70,7 +70,7 @@ function IssueNavigatorRow({
 }) {
   if (n === 0) return null
   return (
-    <div className="mb-4 flex items-center justify-center gap-2 rounded-xl border border-uready-gray-200 bg-uready-gray-50/80 px-3 py-2.5 sm:gap-3 sm:px-5">
+    <div className="flex items-center justify-center gap-2 sm:gap-3">
       <button
         type="button"
         aria-label="이전 허점"
@@ -204,7 +204,6 @@ export function ResultScreen({
   const [materialPdfPageTexts, setMaterialPdfPageTexts] = useState<
     string[] | null
   >(null)
-
   const dual =
     dualSourceMode === true &&
     scriptText.trim().length > 0 &&
@@ -381,7 +380,6 @@ export function ResultScreen({
     const id = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (cancelled) return
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" })
         el.classList.add("ring-2", "ring-primary", "ring-offset-2")
         window.setTimeout(() => {
           el.classList.remove("ring-2", "ring-primary", "ring-offset-2")
@@ -411,6 +409,7 @@ export function ResultScreen({
       <>
         질문 들어오면 막힐 수 있는 부분을 먼저 정리했어요. 이번에는{" "}
         <strong>발표 대본</strong>과 <strong>발표 자료</strong>를 함께 읽고,
+        <br />
         말·화면이 어긋날 때 생기는 취약점도 포함해 검토했습니다.
         <br />
         출처가 약한 주장, 설명이 빈약한 개념, 비교 근거 없는 결론부터
@@ -535,140 +534,168 @@ export function ResultScreen({
   )
 
   const renderSingleSourceWithIssues = () => (
-    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2">
-      <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-        {sectionTitle}
-      </h3>
-      {pdfFile ? (
-        <>
-          <PdfViewToggle mode={pdfViewMode} onModeChange={setPdfViewMode} />
-          <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
-            {pdfViewMode === "pages"
-              ? "◀ ▶ 로 허점을 바꾸면 인용이 있을 법한 페이지로 스크롤됩니다. 문장 하이라이트는 「추출 텍스트」에서 보세요."
-              : "위 ◀ ▶ 로 허점 번호를 바꿀 수 있어요. 하이라이트·허점 카드를 누르면 해당 위치로 스크롤됩니다."}
-          </p>
-          {pdfViewMode === "pages" ? (
-            <PdfPagesPanel
-              ref={sourcePanelRef}
-              file={pdfFile}
-              issues={issues}
-              activeIssueIndex={activeIssueIndex}
-              onActiveIssueIndexChange={handleActiveIssueIndexChange}
-              onNavigateIssue={navigateIssue}
-              onPageTextsReady={setMainPdfPageTexts}
-            />
-          ) : (
-            <SourceTextPanel
-              ref={sourcePanelRef}
-              sourceText={sourceText}
-              issues={issues}
-              activeIssueIndex={activeIssueIndex}
-              onActiveIssueIndexChange={handleActiveIssueIndexChange}
-              onNavigateIssue={navigateIssue}
-            />
-          )}
-        </>
-      ) : (
-        <>
-          <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
-            위 ◀ ▶ 로 허점 번호를 바꿀 수 있어요. 하이라이트·허점 카드를
-            누르면 서로 해당 위치로 스크롤됩니다.
-          </p>
-          <SourceTextPanel
-            ref={sourcePanelRef}
-            sourceText={sourceText}
-            issues={issues}
-            activeIssueIndex={activeIssueIndex}
-            onActiveIssueIndexChange={handleActiveIssueIndexChange}
-            onNavigateIssue={navigateIssue}
-          />
-        </>
+    <section
+      className={cn(
+        "order-1 min-w-0 w-full max-w-full",
+        "md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2",
+        "md:flex md:flex-col md:overflow-hidden"
       )}
-    </section>
-  )
-
-  const renderDualSourceWithIssues = () => (
-    <section className="order-1 md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2">
-      <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+    >
+      <h3 className="mb-3 shrink-0 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
         {sectionTitle}
       </h3>
-      <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
-        ◀ ▶ 로 허점을 바꾸면 대본·자료 각각에서 해당 인용으로 스크롤됩니다.
-      </p>
-      <IssueNavigatorRow
-        n={issues.length}
-        activeIssueIndex={activeIssueIndex}
-        onNavigateIssue={navigateIssue}
-      />
-      <div className="space-y-4">
-        <div>
-          <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-600">
-            발표 대본
-          </h4>
-          {/* 대본: script/material 분류와 무관하게, 인용이 대본에 있으면 모두 하이라이트 */}
-          <SourceTextPanel
-            ref={scriptPanelRef}
-            sourceText={scriptText}
-            issues={issues}
-            activeIssueIndex={activeIssueIndex}
-            onActiveIssueIndexChange={handleActiveIssueIndexChange}
-            onNavigateIssue={navigateIssue}
-            showIssueNavigator={false}
-          />
-        </div>
-        <div>
-          <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-600">
-            발표 자료
-            {materialFilename ? (
-              <span className="ml-1 font-normal text-uready-gray-500">
-                ({materialFilename})
-              </span>
-            ) : null}
-          </h4>
-          {materialPdfFile ? (
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
+        <div className="flex min-h-full min-w-0 flex-col">
+          {pdfFile ? (
             <>
-              <PdfViewToggle mode={pdfViewMode} onModeChange={setPdfViewMode} />
-              <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
-                {pdfViewMode === "pages"
-                  ? "페이지 보기에서는 인용이 있을 법한 쪽으로 스크롤됩니다. 하이라이트는 「추출 텍스트」에서 보세요."
-                  : "자료 본문에서 인용이 맞는 구간이 하이라이트됩니다."}
-              </p>
+              <div className="shrink-0 space-y-3">
+                <PdfViewToggle mode={pdfViewMode} onModeChange={setPdfViewMode} />
+                <p className="text-xs leading-relaxed text-uready-gray-500">
+                  {pdfViewMode === "pages"
+                    ? "◀ ▶ 로 허점을 바꾸면 인용이 있을 법한 페이지로 스크롤됩니다. 문장 하이라이트는 「추출 텍스트」에서 보세요."
+                    : "위 ◀ ▶ 로 허점 번호를 바꿀 수 있어요. 하이라이트·허점 카드를 누르면 해당 위치로 스크롤됩니다."}
+                </p>
+              </div>
               {pdfViewMode === "pages" ? (
                 <PdfPagesPanel
-                  ref={materialPanelRef}
-                  file={materialPdfFile}
+                  ref={sourcePanelRef}
+                  file={pdfFile}
                   issues={issues}
                   activeIssueIndex={activeIssueIndex}
                   onActiveIssueIndexChange={handleActiveIssueIndexChange}
                   onNavigateIssue={navigateIssue}
+                  onPageTextsReady={setMainPdfPageTexts}
+                  fillAvailableHeight
                   showIssueNavigator={false}
-                  onPageTextsReady={setMaterialPdfPageTexts}
                 />
               ) : (
                 <SourceTextPanel
-                  ref={materialPanelRef}
-                  sourceText={materialText}
+                  ref={sourcePanelRef}
+                  sourceText={sourceText}
                   issues={issues}
                   activeIssueIndex={activeIssueIndex}
                   onActiveIssueIndexChange={handleActiveIssueIndexChange}
                   onNavigateIssue={navigateIssue}
+                  fillAvailableHeight
                   showIssueNavigator={false}
-                  highlightIssueIndices={materialIssueIndices}
                 />
               )}
             </>
           ) : (
+            <>
+              <p className="mb-3 shrink-0 text-xs leading-relaxed text-uready-gray-500">
+                위 ◀ ▶ 로 허점 번호를 바꿀 수 있어요. 하이라이트·허점 카드를
+                누르면 서로 해당 위치로 스크롤됩니다.
+              </p>
+              <SourceTextPanel
+                ref={sourcePanelRef}
+                sourceText={sourceText}
+                issues={issues}
+                activeIssueIndex={activeIssueIndex}
+                onActiveIssueIndexChange={handleActiveIssueIndexChange}
+                onNavigateIssue={navigateIssue}
+                fillAvailableHeight
+                showIssueNavigator={false}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+
+  const renderDualSourceWithIssues = () => (
+    <section
+      className={cn(
+        "order-1 min-w-0 w-full max-w-full",
+        "md:sticky md:top-28 md:max-h-[calc(100vh-7rem)] md:self-start md:pb-2",
+        "md:flex md:flex-col md:overflow-hidden"
+      )}
+    >
+      <div className="shrink-0">
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+          {sectionTitle}
+        </h3>
+        <p className="mb-3 text-xs leading-relaxed text-uready-gray-500">
+          ◀ ▶ 로 허점을 바꾸면 대본·자료 각각에서 해당 인용으로 스크롤됩니다.
+        </p>
+      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
+        <div className="flex min-h-full min-w-0 flex-col gap-4">
+          <div className="shrink-0 min-w-0">
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-uready-gray-600">
+              발표 대본
+            </h4>
+            {/* 대본: script/material 분류와 무관하게, 인용이 대본에 있으면 모두 하이라이트 */}
             <SourceTextPanel
-              ref={materialPanelRef}
-              sourceText={materialText}
+              ref={scriptPanelRef}
+              sourceText={scriptText}
               issues={issues}
               activeIssueIndex={activeIssueIndex}
               onActiveIssueIndexChange={handleActiveIssueIndexChange}
               onNavigateIssue={navigateIssue}
               showIssueNavigator={false}
-              highlightIssueIndices={materialIssueIndices}
             />
-          )}
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-col gap-3 md:flex-1">
+            <h4 className="mb-0 shrink-0 text-xs font-bold uppercase tracking-wide text-uready-gray-600">
+              발표 자료
+              {materialFilename ? (
+                <span className="ml-1 font-normal text-uready-gray-500">
+                  ({materialFilename})
+                </span>
+              ) : null}
+            </h4>
+            {materialPdfFile ? (
+              <>
+                <div className="shrink-0 space-y-3">
+                  <PdfViewToggle mode={pdfViewMode} onModeChange={setPdfViewMode} />
+                  <p className="text-xs leading-relaxed text-uready-gray-500">
+                    {pdfViewMode === "pages"
+                      ? "페이지 보기에서는 인용이 있을 법한 쪽으로 스크롤됩니다. 하이라이트는 「추출 텍스트」에서 보세요."
+                      : "자료 본문에서 인용이 맞는 구간이 하이라이트됩니다."}
+                  </p>
+                </div>
+                {pdfViewMode === "pages" ? (
+                  <PdfPagesPanel
+                    ref={materialPanelRef}
+                    file={materialPdfFile}
+                    issues={issues}
+                    activeIssueIndex={activeIssueIndex}
+                    onActiveIssueIndexChange={handleActiveIssueIndexChange}
+                    onNavigateIssue={navigateIssue}
+                    showIssueNavigator={false}
+                    onPageTextsReady={setMaterialPdfPageTexts}
+                    fillAvailableHeight
+                  />
+                ) : (
+                  <SourceTextPanel
+                    ref={materialPanelRef}
+                    sourceText={materialText}
+                    issues={issues}
+                    activeIssueIndex={activeIssueIndex}
+                    onActiveIssueIndexChange={handleActiveIssueIndexChange}
+                    onNavigateIssue={navigateIssue}
+                    showIssueNavigator={false}
+                    highlightIssueIndices={materialIssueIndices}
+                    fillAvailableHeight
+                  />
+                )}
+              </>
+            ) : (
+              <SourceTextPanel
+                ref={materialPanelRef}
+                sourceText={materialText}
+                issues={issues}
+                activeIssueIndex={activeIssueIndex}
+                onActiveIssueIndexChange={handleActiveIssueIndexChange}
+                onNavigateIssue={navigateIssue}
+                showIssueNavigator={false}
+                highlightIssueIndices={materialIssueIndices}
+                fillAvailableHeight
+              />
+            )}
+          </div>
         </div>
       </div>
     </section>
@@ -720,9 +747,10 @@ export function ResultScreen({
         </div>
       </div>
 
-      <div
+      <main
         className={cn(
-          "mx-auto w-full max-w-[1100px] flex-1 px-4 py-10 pb-24 sm:px-6 sm:pb-28",
+          "relative isolate box-border mx-auto flex w-full min-w-0 max-w-[1100px] flex-col overflow-x-clip px-4 py-10 pb-24 sm:px-6 sm:pb-28",
+          "h-auto min-h-0",
           issues.length > 0 && "max-md:pb-36 md:pb-44 lg:pb-52"
         )}
       >
@@ -796,7 +824,7 @@ export function ResultScreen({
         ) : null}
 
         {issues.length === 0 ? (
-          <>
+          <div className="flex flex-col">
             <div className="space-y-8">
               {dual ? renderDualSourceEmpty() : renderSingleSourceEmpty()}
               <p className="rounded-2xl border border-dashed border-uready-gray-200 bg-uready-gray-50 px-6 py-14 text-center text-sm text-uready-gray-600">
@@ -805,102 +833,109 @@ export function ResultScreen({
             </div>
             <p
               className={cn(
-                "border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm",
-                "mt-16 scroll-mt-8 pt-10 md:mt-24 md:pt-14",
-                "mb-10 md:mb-16 lg:mb-20"
+                "order-last shrink-0 border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm",
+                "mt-16 scroll-mt-8 pt-10 md:mt-24 md:pt-14"
               )}
             >
               💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
               결과를 저장해두세요.
             </p>
-          </>
+          </div>
         ) : (
-          <div
-            className={cn(
-              "isolate grid grid-cols-1 gap-x-0 gap-y-10 pb-6",
-              "md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-x-12 md:gap-y-12",
-              "md:pb-12 lg:pb-16"
-            )}
-          >
-            {dual ? renderDualSourceWithIssues() : renderSingleSourceWithIssues()}
-            <section
-              className={cn(
-                "order-2 min-w-0 md:relative md:z-[1]",
-                "max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40"
-              )}
-            >
+          <div className="flex flex-col">
+            {/* 허점 ◀▶: 원문·점검과 형제로 두어 sticky 부모가 길고, md+에서는 SharedNav(52px) 바로 아래에만 고정(화면 하단 고정 없음) */}
+            <div className="flex min-h-0 w-full min-w-0 max-w-full flex-col gap-y-10 md:gap-y-12">
               <div
                 className={cn(
-                  "mx-auto flex min-h-0 w-full max-w-[1100px] flex-col overflow-hidden px-4 sm:px-6 md:px-0",
-                  "max-md:rounded-t-2xl max-md:border max-md:border-b-0 max-md:border-uready-gray-200 max-md:bg-white max-md:shadow-[0_-8px_32px_rgba(0,0,0,0.08)]",
-                  mobileIssuesSheetExpanded
-                    ? "max-md:max-h-[50vh]"
-                    : "max-md:max-h-14"
+                  "min-w-0 w-full max-w-full shrink-0",
+                  "rounded-xl border border-uready-gray-200 bg-uready-gray-50/90 px-3 py-2.5 backdrop-blur-sm sm:px-4",
+                  "md:sticky md:top-[52px] md:z-20 md:py-3"
                 )}
               >
-                <button
-                  type="button"
-                  className="flex w-full shrink-0 items-center justify-between gap-3 border-b border-uready-gray-200/90 py-3 text-left md:hidden"
-                  aria-expanded={mobileIssuesSheetExpanded}
-                  aria-controls="uready-issues-sheet-list"
-                  onClick={() => setMobileIssuesSheetExpanded((e) => !e)}
-                >
-                  <span className="text-xs font-bold uppercase tracking-wide text-uready-gray-500">
-                    점검할 부분
-                  </span>
-                  <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                    <span className="text-sm font-semibold tabular-nums text-uready-gray-800">
-                      허점 {activeIssueIndex + 1} / {issues.length}
-                    </span>
-                    <span className="text-uready-gray-500" aria-hidden>
-                      {mobileIssuesSheetExpanded ? "▼" : "▲"}
-                    </span>
-                  </span>
-                </button>
-
-                <h3 className="mb-4 hidden text-xs font-bold uppercase tracking-wide text-uready-gray-500 md:block">
-                  점검할 부분
-                </h3>
-
-                <ul
-                  id="uready-issues-sheet-list"
+                <IssueNavigatorRow
+                  n={issues.length}
+                  activeIssueIndex={activeIssueIndex}
+                  onNavigateIssue={navigateIssue}
+                />
+              </div>
+              <div
+                className={cn(
+                  "grid min-w-0 w-full max-w-full auto-rows-auto grid-cols-1 gap-x-0 gap-y-10 pb-6",
+                  "md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-x-12 md:gap-y-12",
+                  "md:pb-0 lg:pb-0"
+                )}
+              >
+                {dual ? renderDualSourceWithIssues() : renderSingleSourceWithIssues()}
+                <section
                   className={cn(
-                    "m-0 list-none space-y-5 p-0",
-                    "max-md:min-h-0 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
-                    !mobileIssuesSheetExpanded && "max-md:hidden",
-                    mobileIssuesSheetExpanded &&
-                      "max-md:flex-1 max-md:[scrollbar-gutter:stable]"
+                    "order-2 min-w-0 w-full max-w-full",
+                    "max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40"
                   )}
                 >
-                  {issues.map((issue, index) => (
-                    <IssueCard
-                      key={`${issue.location}-${index}`}
-                      issue={issue}
-                      index={index}
-                      resolvedPdfPage={
-                        dual ? null : resolvedPdfPagesForIssues[index]
-                      }
-                      dualSourceMode={dual}
-                      dualScriptSentence={
-                        dualResolvedLocations?.[index]?.scriptSentence ?? null
-                      }
-                      dualMaterialPage={
-                        dualResolvedLocations?.[index]?.materialPage ?? null
-                      }
+                  <div
+                    className={cn(
+                      "flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden px-4 sm:px-6 md:px-0",
+                      "max-md:rounded-t-2xl max-md:border max-md:border-b-0 max-md:border-uready-gray-200 max-md:bg-white max-md:shadow-[0_-8px_32px_rgba(0,0,0,0.08)]",
+                      mobileIssuesSheetExpanded
+                        ? "max-md:max-h-[50vh] max-md:flex max-md:flex-col"
+                        : "max-md:max-h-14"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full shrink-0 items-center justify-between gap-3 border-b border-uready-gray-200/90 py-3 text-left md:hidden"
+                      aria-expanded={mobileIssuesSheetExpanded}
+                      aria-controls="uready-issues-sheet-list"
+                      onClick={() => setMobileIssuesSheetExpanded((e) => !e)}
+                    >
+                      <span className="text-xs font-bold uppercase tracking-wide text-uready-gray-500">
+                        점검할 부분
+                      </span>
+                      <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                        <span className="text-sm font-semibold tabular-nums text-uready-gray-800">
+                          허점 {activeIssueIndex + 1} / {issues.length}
+                        </span>
+                        <span className="text-uready-gray-500" aria-hidden>
+                          {mobileIssuesSheetExpanded ? "▼" : "▲"}
+                        </span>
+                      </span>
+                    </button>
+
+                    <h3 className="mt-4 mb-4 hidden shrink-0 text-xs font-bold uppercase tracking-wide text-uready-gray-500 md:block">
+                      점검할 부분
+                    </h3>
+
+                    <IssueCardsCarousel
+                      id="uready-issues-sheet-list"
+                      issues={issues}
+                      activeIssueIndex={activeIssueIndex}
+                      onNavigateIssue={navigateIssue}
+                      onActivateIssue={activateIssueFromCard}
+                      dual={dual}
+                      resolvedPdfPagesForIssues={resolvedPdfPagesForIssues}
+                      dualResolvedLocations={dualResolvedLocations}
                       usedNoToolFallback={
                         materialMeta?.usedNoToolFallback === true
                       }
-                      onActivate={activateIssueFromCard}
+                      className={cn(
+                        !mobileIssuesSheetExpanded && "max-md:hidden",
+                        mobileIssuesSheetExpanded &&
+                          "max-md:min-h-0 max-md:flex-1 max-md:pb-[max(1rem,env(safe-area-inset-bottom))]"
+                      )}
+                      slideScrollClassName={
+                        mobileIssuesSheetExpanded
+                          ? "max-md:min-h-0 max-md:flex-1 max-md:flex-col md:min-h-0"
+                          : undefined
+                      }
                     />
-                  ))}
-                </ul>
+                  </div>
+                </section>
               </div>
-            </section>
+            </div>
             <p
               className={cn(
-                "col-span-1 border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm md:col-span-2",
-                "order-3 mt-0 w-full min-w-0 scroll-mt-8 pt-8 md:pt-12",
-                "relative z-[2] mb-10 md:mb-16 lg:mb-20"
+                "order-last w-full max-w-none shrink-0 border-t border-uready-gray-100 text-xs font-semibold leading-relaxed text-primary sm:text-sm",
+                "mt-10 scroll-mt-8 pt-8 md:mt-12 md:pt-10"
               )}
             >
               💾 새로고침 시 데이터가 삭제되니 그 전에 우측 상단 버튼을 눌러 분석
@@ -908,7 +943,7 @@ export function ResultScreen({
             </p>
           </div>
         )}
-      </div>
+      </main>
 
       <div
         className={`fixed bottom-8 left-1/2 z-[1000] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full bg-uready-gray-900 px-5 py-3 text-center text-sm font-medium text-white shadow-[0_8px_32px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] whitespace-normal sm:whitespace-nowrap ${

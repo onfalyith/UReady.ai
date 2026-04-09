@@ -5,6 +5,8 @@ import { useEffect, useState } from "react"
 type LoadingScreenProps = {
   displayFilename: string
   onLogoClick: () => void
+  /** 심층 점검(4단계) 안내 */
+  deepInspectionMode?: boolean
 }
 
 const LOG_LINES = [
@@ -46,18 +48,34 @@ function DocumentIcon({ className }: { className?: string }) {
 export function LoadingScreen({
   displayFilename,
   onLogoClick,
+  deepInspectionMode = false,
 }: LoadingScreenProps) {
   const [progress, setProgress] = useState(0)
   const [visibleLogCount, setVisibleLogCount] = useState(1)
   const [insightIndex, setInsightIndex] = useState(0)
 
+  /**
+   * 진행률은 실제 API 완료와 무관한 시간 기준 추정치입니다.
+   * 이전 구현은 t = min(1, elapsed/42s)로 42초 이후 t가 고정되어
+   * (1 - e^(-2.8)) ≈ 0.94 → 약 84%에서 영원히 멈춘 것처럼 보였습니다.
+   * → 초반 42초는 기존 곡선 유지, 이후에는 별도 완화로 84→94%까지 천천히 상승.
+   */
   useEffect(() => {
     const start = Date.now()
     const id = window.setInterval(() => {
       const elapsed = Date.now() - start
-      const t = Math.min(1, elapsed / 42000)
-      const eased = 1 - Math.exp(-t * 2.8)
-      setProgress(Math.min(89, Math.floor(eased * 90)))
+      const phase1Ms = 42_000
+      let p: number
+      if (elapsed <= phase1Ms) {
+        const t = elapsed / phase1Ms
+        const eased = 1 - Math.exp(-t * 2.8)
+        p = Math.floor(eased * 90)
+      } else {
+        const extra = elapsed - phase1Ms
+        const eased = 1 - Math.exp(-extra / 95_000)
+        p = Math.min(94, 84 + Math.floor(eased * 10))
+      }
+      setProgress(p)
     }, 160)
     return () => window.clearInterval(id)
   }, [])
@@ -114,6 +132,12 @@ export function LoadingScreen({
           >
             {displayFilename}
           </div>
+          {deepInspectionMode ? (
+            <p className="mt-2 text-[12px] font-medium text-primary">
+              심층 점검 모드: 맥락 추출 → 팩트체크 → 소크라테스 초안 → 최종
+              통합(4단계) 진행 중입니다. 잠시만 기다려 주세요.
+            </p>
+          ) : null}
 
           <div className="progress-bar-wrap mt-8">
             <div className="progress-track h-2 overflow-hidden rounded-full bg-uready-gray-200">

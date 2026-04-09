@@ -345,7 +345,7 @@ function dedupeMergedIssues(issues: PresentationIssue[]): PresentationIssue[] {
   return out
 }
 
-function collectGroundingSteps(
+export function collectGroundingSteps(
   steps: ReadonlyArray<{
     stepNumber: number
     providerMetadata: ProviderMetadata | undefined
@@ -473,12 +473,15 @@ function jsonLikeness(s: string): number {
   let n = 0
   if (t.includes('"issues"')) n += 8
   else if (/issues/i.test(t)) n += 3
+  if (t.includes('"globalContext"')) n += 7
+  if (t.includes('"extractedStatements"')) n += 6
+  if (t.includes('"draftIssues"')) n += 7
   if (t.includes("{")) n += 2
   if (t.includes("[")) n += 1
   return n
 }
 
-function collectAnalysisTextCandidates(result: {
+export function collectAnalysisTextCandidates(result: {
   text: string
   reasoningText?: string | undefined
   steps: ReadonlyArray<{
@@ -522,7 +525,7 @@ function collectAnalysisTextCandidates(result: {
   return out
 }
 
-function parseJsonFromModelBlock(inner: string): unknown {
+export function parseJsonFromModelBlock(inner: string): unknown {
   const t = inner.trim()
   try {
     return JSON.parse(t) as unknown
@@ -635,6 +638,8 @@ type PresentationPassOptions = {
 export type RunPresentationAnalysisOptions = {
   userFocusNotes?: string
   dualSourceMode?: boolean
+  /** 4단계 심층 점검 파이프라인(별도 연속 API 호출) */
+  deepInspectionMode?: boolean
 }
 
 async function maybePolicyPreprocessMaterial(
@@ -1341,6 +1346,19 @@ export async function runPresentationAnalysis(
   }
   const passOptsBase =
     Object.keys(focusOpts).length > 0 ? focusOpts : undefined
+
+  if (options?.deepInspectionMode === true) {
+    const { runDeepInspectionPipeline } = await import("@/lib/ai/deep-inspection")
+    const sent = text.length > maxChars ? text.slice(0, maxChars) : text
+    return runDeepInspectionPipeline(sent, {
+      userFocusNotes: userFocus,
+      dualSourceMode: dualMode,
+      charLengthOriginal: fullLenOriginal,
+      charLengthSentToModel: sent.length,
+      truncatedForModel: text.length > maxChars,
+      maxChars,
+    })
+  }
 
   if (fullLen <= maxChars) {
     const pass = await executePresentationAnalysisPass(

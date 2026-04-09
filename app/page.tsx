@@ -125,6 +125,7 @@ export default function Home() {
       const dual = isDualSourceInput(state)
       const res = await analyzePresentationText(text, {
         dualSourceMode: dual,
+        deepInspectionMode: state.deepInspectionMode,
       })
       if (analyzeRequestId.current !== id) return
 
@@ -149,6 +150,7 @@ export default function Home() {
     state.selectedFile,
     state.documentText,
     state.textareaDraft,
+    state.deepInspectionMode,
   ])
 
   return (
@@ -158,6 +160,10 @@ export default function Home() {
           textareaDraft={state.textareaDraft}
           selectedFile={state.selectedFile}
           extractingDocument={state.extractingDocument}
+          deepInspectionMode={state.deepInspectionMode}
+          onDeepInspectionModeChange={(deepInspectionMode) =>
+            setState((s) => ({ ...s, deepInspectionMode }))
+          }
           analysisError={state.analysisError}
           onDismissAnalysisError={dismissAnalysisError}
           onTextareaChange={(textareaDraft) =>
@@ -173,6 +179,7 @@ export default function Home() {
         <LoadingScreen
           displayFilename={state.displayFilename}
           onLogoClick={resetToUpload}
+          deepInspectionMode={state.deepInspectionMode}
         />
       )}
 
